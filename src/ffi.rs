@@ -139,9 +139,9 @@ pub extern "C" fn nrf_modem_os_busywait(usec: i32) {
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_timedwait(_context: u32, timeout: *mut i32) -> i32 {
     unsafe {
-		if nrf_modem_os_is_in_isr() {
-			return -(nrfxlib_sys::NRF_EPERM as i32);
-		}
+        if nrf_modem_os_is_in_isr() {
+            return -(nrfxlib_sys::NRF_EPERM as i32);
+        }
 
         if !nrfxlib_sys::nrf_modem_is_initialized() {
             return -(nrfxlib_sys::NRF_ESHUTDOWN as i32);
@@ -235,12 +235,12 @@ pub extern "C" fn nrf_modem_os_shm_tx_free(ptr: *mut u8) {
 
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_trace_alloc(_bytes: usize) -> *mut u8 {
-	unimplemented!()
+    unimplemented!()
 }
 
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_trace_free(_mem: *mut u8) {
-	unimplemented!()
+    unimplemented!()
 }
 
 /// @brief Function for loading configuration directly into IPC peripheral.
@@ -297,10 +297,17 @@ pub extern "C" fn nrfx_ipc_init(
 /// Function for uninitializing the IPC module.
 #[no_mangle]
 pub extern "C" fn nrfx_ipc_uninit() {
-    use cortex_m::interrupt::InterruptNumber;
-    let irq = nrf9160_pac::Interrupt::IPC;
-    let irq_num = usize::from(irq.number());
-    cortex_m::peripheral::NVIC::mask(irq);
+    let ipc = unsafe { &(*nrf9160_pac::IPC_NS::ptr()) };
+
+    for i in 0..IPC_CONF_NUM {
+        ipc.send_cnf[i as usize].reset();
+    }
+
+    for i in 0..IPC_CONF_NUM {
+        ipc.receive_cnf[i as usize].reset();
+    }
+
+    ipc.intenset.reset();
 }
 
 /// Allocate some memory from the given heap.
@@ -359,7 +366,7 @@ unsafe fn generic_free(ptr: *mut u8, heap: &crate::WrappedHeap) {
 
 /// Call this when we have an IPC IRQ. Not `extern C` as its not called by the
 /// library, only our interrupt handler code.
-pub unsafe fn ipc_irq_handler() {
+pub unsafe fn nrf_ipc_irq_handler() {
     // Get the information about events that fired this interrupt
     let events_map = (*nrf9160_pac::IPC_NS::ptr()).intpend.read().bits() as u32;
 
@@ -367,7 +374,7 @@ pub unsafe fn ipc_irq_handler() {
     let mut bitmask = events_map;
     while bitmask != 0 {
         let event_idx = bitmask.trailing_zeros();
-        bitmask ^= 1 << event_idx;
+        bitmask &= !(1 << event_idx);
         (*nrf9160_pac::IPC_NS::ptr()).events_receive[event_idx as usize].write(|w| w.bits(0));
     }
 
@@ -522,8 +529,8 @@ struct Semaphore {
     current_value: AtomicU32,
 }
 
-/// Check if executing in interrupt context. 
+/// Check if executing in interrupt context.
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_is_in_isr() -> bool {
-	cortex_m::peripheral::SCB::vect_active() != cortex_m::peripheral::scb::VectActive::ThreadMode
+    cortex_m::peripheral::SCB::vect_active() != cortex_m::peripheral::scb::VectActive::ThreadMode
 }

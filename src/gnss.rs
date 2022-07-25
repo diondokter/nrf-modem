@@ -1,15 +1,13 @@
-use crate::error::Error;
-use crate::error::ErrorSource;
-use core::async_iter::AsyncIterator;
-use core::mem::size_of;
-use core::mem::MaybeUninit;
-use core::pin::Pin;
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use core::task::Context;
-use core::task::Poll;
+use crate::error::{Error, ErrorSource};
+use core::{
+    async_iter::AsyncIterator,
+    mem::{size_of, MaybeUninit},
+    pin::Pin,
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    task::{Context, Poll},
+};
 use futures::task::AtomicWaker;
-use num_enum::FromPrimitive;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
 static GNSS_WAKER: AtomicWaker = AtomicWaker::new();
 static LAST_GNSS_EVENT: AtomicU32 = AtomicU32::new(0);
@@ -21,6 +19,28 @@ unsafe extern "C" fn gnss_callback(event: i32) {
 
     LAST_GNSS_EVENT.store(event as u32, Ordering::SeqCst);
     GNSS_WAKER.wake();
+}
+
+static AT_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+unsafe extern "C" fn at_callback(resp: *const u8) {
+    let cstring = core::ffi::CStr::from_ptr(resp as _);
+    let string = cstring.to_str().unwrap();
+
+    #[cfg(feature = "defmt")]
+    defmt::trace!("AT: {}", string);
+
+    AT_PROGRESS.store(false, Ordering::SeqCst);
+}
+
+unsafe extern "C" fn at_notif_callback(resp: *const u8) {
+    let cstring = core::ffi::CStr::from_ptr(resp as _);
+    let string = cstring.to_str().unwrap();
+
+    #[cfg(feature = "defmt")]
+    defmt::trace!("Notif: {}", string);
+
+    AT_PROGRESS.store(false, Ordering::SeqCst);
 }
 
 pub struct Gnss {}
@@ -35,23 +55,37 @@ impl Gnss {
         defmt::debug!("Enabling gnss");
 
         unsafe {
-            // let mut buf = [0; 128];
-            // let res = nrfxlib_sys::nrf_modem_at_cmd(buf.as_mut_ptr() as _, 128, b"AT+CFUN=0\0".as_ptr()).into_result();
-            // #[cfg(feature = "defmt")]
-            // defmt::debug!("{}", core::str::from_utf8(&buf).unwrap());
-            // res?;
+            nrfxlib_sys::nrf_modem_at_notif_handler_set(Some(at_notif_callback));
 
-            let mut buf = [0; 128];
-            let res = nrfxlib_sys::nrf_modem_at_cmd(buf.as_mut_ptr() as _, 128, b"AT%XSYSTEMMODE?\0".as_ptr()).into_result();
-            #[cfg(feature = "defmt")]
-            defmt::debug!("{}", core::str::from_utf8(&buf).unwrap());
-            res?;
+            // while AT_PROGRESS.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            //     != Ok(false)
+            // {}
+            // nrfxlib_sys::nrf_modem_at_cmd_async(Some(at_callback), b"AT+CFUN=0\0".as_ptr())
+            //     .into_result()
+            //     .unwrap();
 
-            let mut buf = [0; 128];
-            let res = nrfxlib_sys::nrf_modem_at_cmd(buf.as_mut_ptr() as _, 128, b"AT+CFUN=31\0".as_ptr()).into_result();
-            #[cfg(feature = "defmt")]
-            defmt::debug!("{}", core::str::from_utf8(&buf).unwrap());
-            res?;
+            while AT_PROGRESS.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                != Ok(false)
+            {}
+
+            nrfxlib_sys::nrf_modem_at_cmd_async(Some(at_callback), b"AT+CFUN=1".as_ptr())
+                .into_result()
+                .unwrap();
+
+            while AT_PROGRESS.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                != Ok(false)
+            {}
+
+            nrfxlib_sys::nrf_modem_at_cmd_async(Some(at_callback), b"AT+CMEE=1".as_ptr())
+                .into_result()
+                .unwrap();
+
+            while AT_PROGRESS.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                != Ok(false)
+            {}
+            nrfxlib_sys::nrf_modem_at_cmd_async(Some(at_callback), b"AT%XMODEMUUID".as_ptr())
+                .into_result()
+                .unwrap();
         }
 
         if GNSS_TAKEN.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst) != Ok(false)
@@ -72,7 +106,7 @@ impl Gnss {
     ) -> Result<impl AsyncIterator<Item = Result<GnssData, Error>>, Error> {
         #[cfg(feature = "defmt")]
         defmt::debug!("Setting single fix");
-    
+
         unsafe {
             nrfxlib_sys::nrf_modem_gnss_fix_interval_set(0).into_result()?;
         }

@@ -133,7 +133,7 @@ pub fn trace_irq_handler() {
 /// IPC code now lives outside `lib_modem`, so call our IPC handler function.
 pub fn ipc_irq_handler() {
 	unsafe {
-		crate::ffi::ipc_irq_handler();
+		crate::ffi::nrf_ipc_irq_handler();
         nrfxlib_sys::nrf_modem_os_event_notify();
 	}
 }
