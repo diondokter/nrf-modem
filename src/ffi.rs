@@ -310,6 +310,20 @@ pub extern "C" fn nrfx_ipc_uninit() {
     ipc.intenset.reset();
 }
 
+#[no_mangle]
+pub extern "C" fn nrfx_ipc_receive_event_enable(event_index: u8) {
+    let ipc = unsafe { &(*nrf9160_pac::IPC_NS::ptr()) };
+    ipc.inten
+        .modify(|r, w| unsafe { w.bits(r.bits() | 1 << event_index) })
+}
+
+#[no_mangle]
+pub extern "C" fn nrfx_ipc_receive_event_disable(event_index: u8) {
+    let ipc = unsafe { &(*nrf9160_pac::IPC_NS::ptr()) };
+    ipc.inten
+        .modify(|r, w| unsafe { w.bits(r.bits() & !(1 << event_index)) })
+}
+
 /// Allocate some memory from the given heap.
 ///
 /// We allocate four extra bytes so that we can store the number of bytes

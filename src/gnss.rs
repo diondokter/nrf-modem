@@ -1,12 +1,13 @@
 use crate::error::{Error, ErrorSource};
 use core::{
-    async_iter::AsyncIterator,
     mem::{size_of, MaybeUninit},
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
     task::{Context, Poll},
 };
-use futures::task::AtomicWaker;
+use arrayvec::ArrayString;
+use embassy::waitqueue::AtomicWaker;
+use futures::Stream;
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
 static GNSS_WAKER: AtomicWaker = AtomicWaker::new();
@@ -15,78 +16,23 @@ static GNSS_TAKEN: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "C" fn gnss_callback(event: i32) {
     #[cfg(feature = "defmt")]
-    defmt::trace!("Gnss event: {}", GnssEventType::from(event as u32));
+    defmt::trace!("Gnss -> {}", GnssEventType::from(event as u32));
 
-    LAST_GNSS_EVENT.store(event as u32, Ordering::SeqCst);
+    LAST_GNSS_EVENT.fetch_or(1 << event as u32, Ordering::SeqCst);
     GNSS_WAKER.wake();
-}
-
-static AT_PROGRESS: AtomicBool = AtomicBool::new(false);
-
-unsafe extern "C" fn at_callback(resp: *const u8) {
-    let cstring = core::ffi::CStr::from_ptr(resp as _);
-    let string = cstring.to_str().unwrap();
-
-    #[cfg(feature = "defmt")]
-    defmt::trace!("AT: {}", string);
-
-    AT_PROGRESS.store(false, Ordering::SeqCst);
-}
-
-unsafe extern "C" fn at_notif_callback(resp: *const u8) {
-    let cstring = core::ffi::CStr::from_ptr(resp as _);
-    let string = cstring.to_str().unwrap();
-
-    #[cfg(feature = "defmt")]
-    defmt::trace!("Notif: {}", string);
-
-    AT_PROGRESS.store(false, Ordering::SeqCst);
 }
 
 pub struct Gnss {}
 
 impl Gnss {
-    pub fn new() -> Result<Self, Error> {
+    pub async fn new() -> Result<Self, Error> {
         if unsafe { !nrfxlib_sys::nrf_modem_is_initialized() } {
             return Err(Error::ModemNotInitialized);
         }
 
         #[cfg(feature = "defmt")]
         defmt::debug!("Enabling gnss");
-
-        unsafe {
-            nrfxlib_sys::nrf_modem_at_notif_handler_set(Some(at_notif_callback));
-
-            // while AT_PROGRESS.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            //     != Ok(false)
-            // {}
-            // nrfxlib_sys::nrf_modem_at_cmd_async(Some(at_callback), b"AT+CFUN=0\0".as_ptr())
-            //     .into_result()
-            //     .unwrap();
-
-            while AT_PROGRESS.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                != Ok(false)
-            {}
-
-            nrfxlib_sys::nrf_modem_at_cmd_async(Some(at_callback), b"AT+CFUN=1".as_ptr())
-                .into_result()
-                .unwrap();
-
-            while AT_PROGRESS.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                != Ok(false)
-            {}
-
-            nrfxlib_sys::nrf_modem_at_cmd_async(Some(at_callback), b"AT+CMEE=1".as_ptr())
-                .into_result()
-                .unwrap();
-
-            while AT_PROGRESS.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                != Ok(false)
-            {}
-            nrfxlib_sys::nrf_modem_at_cmd_async(Some(at_callback), b"AT%XMODEMUUID".as_ptr())
-                .into_result()
-                .unwrap();
-        }
+        crate::at::send_at("AT+CFUN=31").await?;
 
         if GNSS_TAKEN.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst) != Ok(false)
         {
@@ -103,12 +49,14 @@ impl Gnss {
     pub fn start_single_fix(
         &mut self,
         config: GnssConfig,
-    ) -> Result<impl AsyncIterator<Item = Result<GnssData, Error>>, Error> {
+    ) -> Result<impl Stream<Item = Result<GnssData, Error>>, Error> {
         #[cfg(feature = "defmt")]
         defmt::debug!("Setting single fix");
 
         unsafe {
-            nrfxlib_sys::nrf_modem_gnss_fix_interval_set(0).into_result()?;
+            nrfxlib_sys::nrf_modem_gnss_fix_interval_set(0)
+                .into_result()
+                .unwrap();
         }
 
         #[cfg(feature = "defmt")]
@@ -232,6 +180,31 @@ enum GnssEventType {
     ReferenceAltitudeExpired = nrfxlib_sys::NRF_MODEM_GNSS_EVT_REF_ALT_EXPIRED,
 }
 
+impl GnssEventType {
+    pub fn get_from_bit_packed(container: u32) -> Self {
+        let variants = [
+            Self::ReferenceAltitudeExpired,
+            Self::SleepAfterFix,
+            Self::RetryTimeoutReached,
+            Self::PeriodicWakeup,
+            Self::UnblockedByLte,
+            Self::BlockedByLte,
+            Self::AgpsRequest,
+            Self::Nmea,
+            Self::GnssFix,
+            Self::Pvt,
+        ];
+
+        for variant in variants {
+            if container & (1 << variant as u32) != 0 {
+                return variant;
+            }
+        }
+
+        Self::None
+    }
+}
+
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct GnssConfig {
     /// Set below which elevation angle GNSS should stop tracking a satellite.
@@ -353,9 +326,10 @@ enum GnssDataType {
     Agps = nrfxlib_sys::NRF_MODEM_GNSS_DATA_AGPS_REQ,
 }
 
+#[derive(Debug, Clone)]
 pub enum GnssData {
     PositionVelocityTime(nrfxlib_sys::nrf_modem_gnss_pvt_data_frame),
-    Nmea(nrfxlib_sys::nrf_modem_gnss_nmea_data_frame),
+    Nmea(ArrayString<83>),
     Agps(nrfxlib_sys::nrf_modem_gnss_agps_data_frame),
 }
 
@@ -376,7 +350,7 @@ impl GnssData {
                 }
             }
             GnssDataType::Nmea => {
-                let mut data = MaybeUninit::uninit();
+                let mut data: MaybeUninit<nrfxlib_sys::nrf_modem_gnss_nmea_data_frame> = MaybeUninit::uninit();
 
                 unsafe {
                     nrfxlib_sys::nrf_modem_gnss_read(
@@ -385,7 +359,11 @@ impl GnssData {
                         data_type as u32 as _,
                     )
                     .into_result()?;
-                    Ok(GnssData::Nmea(data.assume_init()))
+
+                    let data = data.assume_init().nmea_str;
+                    let mut string_data = ArrayString::from_byte_string(&data)?;
+                    string_data.truncate(string_data.as_bytes().iter().take_while(|b| **b != 0).count());
+                    Ok(GnssData::Nmea(string_data))
                 }
             }
             GnssDataType::Agps => {
@@ -420,15 +398,22 @@ impl GnssDataIter {
     }
 }
 
-impl AsyncIterator for GnssDataIter {
+impl Stream for GnssDataIter {
     type Item = Result<GnssData, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.done {
+            #[cfg(feature = "defmt")]
+            defmt::trace!("Gnss is done");
+
             return Poll::Ready(None);
         }
 
-        let event = GnssEventType::from(LAST_GNSS_EVENT.swap(0, Ordering::SeqCst));
+        let event_bits = LAST_GNSS_EVENT.load(Ordering::SeqCst);
+        let event = GnssEventType::get_from_bit_packed(event_bits);
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Gnss event: {}", event);
 
         let data = match event {
             GnssEventType::Pvt => Some(GnssData::read_from_modem(
@@ -454,7 +439,13 @@ impl AsyncIterator for GnssDataIter {
             _ => None,
         };
 
-        GNSS_WAKER.register(cx.waker());
+        let left_over_event_bits = LAST_GNSS_EVENT.fetch_and(!(1 << event as u32), Ordering::SeqCst);
+
+        if left_over_event_bits > 0 {
+            cx.waker().wake_by_ref();
+        } else {
+            GNSS_WAKER.register(cx.waker());
+        }
 
         match data {
             Some(data) => Poll::Ready(Some(data)),

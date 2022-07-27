@@ -1,8 +1,18 @@
+use core::str::Utf8Error;
+
+use at_commands::parser::ParseError;
+
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error {
     ModemNotInitialized,
     GnssAlreadyTaken,
     NrfError(i32),
+    BufferTooSmall(Option<usize>),
+    AtParseError(ParseError),
+    InvalidSystemModeConfig,
+    StringNotNulTerminated,
+    Utf8Error,
 }
 
 pub trait ErrorSource {
@@ -16,5 +26,17 @@ impl ErrorSource for i32 {
         }
 
         Err(Error::NrfError(self))
+    }
+}
+
+impl From<ParseError> for Error {
+    fn from(e: ParseError) -> Self {
+        Error::AtParseError(e)
+    }
+}
+
+impl From<Utf8Error> for Error {
+    fn from(_: Utf8Error) -> Self {
+        Self::Utf8Error
     }
 }

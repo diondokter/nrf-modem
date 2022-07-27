@@ -1,5 +1,4 @@
 #![no_std]
-#![feature(async_iterator)]
 
 use crate::error::ErrorSource;
 use core::cell::RefCell;
@@ -7,9 +6,10 @@ use cortex_m::interrupt::Mutex;
 use error::Error;
 use linked_list_allocator::Heap;
 
+pub mod at;
 pub mod error;
-pub mod gnss;
 pub mod ffi;
+pub mod gnss;
 
 /// We need to wrap our heap so it's creatable at run-time and accessible from an ISR.
 ///
@@ -55,11 +55,11 @@ static TX_ALLOCATOR: WrappedHeap = Mutex::new(RefCell::new(None));
 //******************************************************************************
 
 /// Start the NRF Modem library
-pub fn init() -> Result<(), Error> {
+pub async fn init(mode: SystemMode) -> Result<(), Error> {
     unsafe {
         /// Allocate some space in global data to use as a heap.
         static mut HEAP_MEMORY: [u32; 1024] = [0u32; 1024];
-        let heap_start = HEAP_MEMORY.as_ptr() as usize;
+        let heap_start = HEAP_MEMORY.as_ptr() as *mut u8;
         let heap_size = HEAP_MEMORY.len() * core::mem::size_of::<u32>();
         cortex_m::interrupt::free(|cs| {
             *LIBRARY_ALLOCATOR.borrow(cs).borrow_mut() = Some(Heap::new(heap_start, heap_size))
@@ -98,7 +98,7 @@ pub fn init() -> Result<(), Error> {
         // Use the same TX memory region as above
         cortex_m::interrupt::free(|cs| {
             *TX_ALLOCATOR.borrow(cs).borrow_mut() = Some(Heap::new(
-                params.shmem.tx.base as usize,
+                params.shmem.tx.base as usize as *mut u8,
                 params.shmem.tx.size as usize,
             ))
         });
@@ -106,34 +106,129 @@ pub fn init() -> Result<(), Error> {
 
     // OK, let's start the library
     unsafe { nrfxlib_sys::nrf_modem_init(&params, nrfxlib_sys::nrf_modem_mode_t_NORMAL_MODE) }
-        .into_result()
+        .into_result()?;
+
+    // Turn off the modem
+    let (modem_state, ) =
+        at_commands::parser::CommandParser::parse(at::send_at("AT+CFUN?").await?.as_bytes())
+            .expect_identifier(b"+CFUN: ")
+            .expect_int_parameter()
+            .expect_identifier(b"\r\nOK\r\n")
+            .finish()?;
+
+    if modem_state != 0 {
+        // The modem is still turned on (probably from a previous run). Let's turn it off
+        at::send_at("AT+CFUN=0").await?;
+    }
+
+    if !mode.is_valid_config() {
+        return Err(Error::InvalidSystemModeConfig);
+    }
+
+    let mut buffer = [0; 64];
+    mode.create_at_command(&mut buffer)?;
+    at::send_at_bytes(&buffer).await?;
+
+    Ok(())
 }
 
 unsafe extern "C" fn modem_fault_handler(_info: *mut nrfxlib_sys::nrf_modem_fault_info) {
     #[cfg(feature = "defmt")]
-    defmt::error!("Modem fault - reason: {}, pc: {}", (*_info).reason, (*_info).program_counter);
+    defmt::error!(
+        "Modem fault - reason: {}, pc: {}",
+        (*_info).reason,
+        (*_info).program_counter
+    );
 }
 
 /// You must call this when an EGU1 interrupt occurs.
 pub fn application_irq_handler() {
-	unsafe {
-		nrfxlib_sys::nrf_modem_application_irq_handler();
+    unsafe {
+        nrfxlib_sys::nrf_modem_application_irq_handler();
         nrfxlib_sys::nrf_modem_os_event_notify();
-	}
+    }
 }
 
 /// must call this when an EGU2 interrupt occurs.
 pub fn trace_irq_handler() {
-	unsafe {
-		nrfxlib_sys::nrf_modem_trace_irq_handler();
+    unsafe {
+        nrfxlib_sys::nrf_modem_trace_irq_handler();
         nrfxlib_sys::nrf_modem_os_event_notify();
-	}
+    }
 }
 
 /// IPC code now lives outside `lib_modem`, so call our IPC handler function.
 pub fn ipc_irq_handler() {
-	unsafe {
-		crate::ffi::nrf_ipc_irq_handler();
+    unsafe {
+        crate::ffi::nrf_ipc_irq_handler();
         nrfxlib_sys::nrf_modem_os_event_notify();
-	}
+    }
+}
+
+/// Identifies which radios in the nRF9160 should be active
+///
+/// Based on: https://infocenter.nordicsemi.com/index.jsp?topic=%2Fref_at_commands%2FREF%2Fat_commands%2Fmob_termination_ctrl_status%2Fcfun.html
+#[derive(Debug, Copy, Clone)]
+pub struct SystemMode {
+    pub lte_support: bool,
+    pub nbiot_support: bool,
+    pub gnss_support: bool,
+    pub preference: ConnectionPreference,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ConnectionPreference {
+    /// No preference. Initial system selection is based on history data and Universal Subscriber Identity Module (USIM)
+    None = 0,
+    /// LTE-M preferred
+    Lte = 1,
+    /// NB-IoT preferred
+    Nbiot = 2,
+    /// Network selection priorities override system priority, but if the same network or equal priority networks are found, LTE-M is preferred
+    NetworkPreferenceWithLteFallback = 3,
+    /// Network selection priorities override system priority, but if the same network or equal priority networks are found, NB-IoT is preferred
+    NetworkPreferenceWithNbiotFallback = 4,
+}
+
+impl SystemMode {
+    fn is_valid_config(&self) -> bool {
+        match self.preference {
+            ConnectionPreference::None => true,
+            ConnectionPreference::Lte => self.lte_support,
+            ConnectionPreference::Nbiot => self.nbiot_support,
+            ConnectionPreference::NetworkPreferenceWithLteFallback => {
+                self.lte_support && self.nbiot_support
+            }
+            ConnectionPreference::NetworkPreferenceWithNbiotFallback => {
+                self.lte_support && self.nbiot_support
+            }
+        }
+    }
+
+    fn create_at_command<'a>(&self, buffer: &'a mut [u8]) -> Result<&'a [u8], Error> {
+        at_commands::builder::CommandBuilder::create_set(buffer, true)
+            .named("%XSYSTEMMODE")
+            .with_int_parameter(self.lte_support as u8)
+            .with_int_parameter(self.nbiot_support as u8)
+            .with_int_parameter(self.gnss_support as u8)
+            .with_int_parameter(self.preference as u8)
+            .finish()
+            .map_err(|e| Error::BufferTooSmall(Some(e)))
+    }
+}
+
+/// Enable GNSS on the nRF9160-DK (PCA10090NS)
+///
+/// Sends a AT%XMAGPIO command which activates the off-chip GNSS RF routing
+/// switch when receiving signals between 1574 MHz and 1577 MHz.
+///
+/// Works on the nRF9160-DK (PCA10090NS) and Actinius Icarus. Other PCBs may
+/// use different MAGPIO pins to control the GNSS switch.
+pub async fn configure_gnss_on_pca10090ns() -> Result<(), Error> {
+    #[cfg(feature = "defmt")]
+    defmt::debug!("Configuring XMAGPIO pins for 1574-1577 MHz");
+
+	// Configure the GNSS antenna. See `nrf/samples/nrf9160/gps/src/main.c`.
+	crate::at::send_at("AT%XMAGPIO=1,0,0,1,1,1574,1577").await?;
+	Ok(())
 }

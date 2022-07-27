@@ -11,9 +11,12 @@ futures = { version = "0.3.21", default-features = false }
 num_enum = { version = "0.5.7", default-features = false }
 defmt = { version = "0.3.2", optional = true }
 cortex-m = "0.7"
-linked_list_allocator = { version="0.9.0", default-features=false, features=["use_spin"] }
+linked_list_allocator = { version="0.10.1", default-features=false, features=["use_spin"] }
 nrf9160-pac = "0.11.0"
+embassy = { git = "https://github.com/embassy-rs/embassy.git", rev = "4dc8007", features = ["nightly"] }
+arrayvec = { version = "0.7", default-features = false }
+at-commands = "0.5.2"
 
 [features]
 default = []
-defmt = ["dep:defmt"]
+defmt = ["dep:defmt", "at-commands/defmt"]
