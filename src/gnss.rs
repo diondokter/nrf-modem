@@ -2,6 +2,7 @@ use crate::error::{Error, ErrorSource};
 use arrayvec::{ArrayString, ArrayVec};
 use core::{
     cell::RefCell,
+    marker::PhantomData,
     mem::{size_of, MaybeUninit},
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
@@ -64,12 +65,12 @@ impl Gnss {
         Ok(Gnss {})
     }
 
-    pub fn start_single_fix(
-        &mut self,
+    pub fn start_single_fix<'s>(
+        &'s mut self,
         config: GnssConfig,
-    ) -> Result<impl Stream<Item = Result<GnssData, Error>>, Error> {
+    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + 's, Error> {
         #[cfg(feature = "defmt")]
-        defmt::debug!("Setting single fix");
+        defmt::trace!("Setting single fix");
 
         unsafe {
             nrfxlib_sys::nrf_modem_gnss_fix_interval_set(0)
@@ -78,7 +79,7 @@ impl Gnss {
         }
 
         #[cfg(feature = "defmt")]
-        defmt::debug!("Apply config");
+        defmt::trace!("Apply config");
 
         self.apply_config(config)?;
 
@@ -90,6 +91,63 @@ impl Gnss {
         }
 
         Ok(GnssDataIter::new(true))
+    }
+
+    pub fn start_continuous_fix<'s>(
+        &'s mut self,
+        config: GnssConfig,
+    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + 's, Error> {
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Setting single fix");
+
+        unsafe {
+            nrfxlib_sys::nrf_modem_gnss_fix_interval_set(1)
+                .into_result()
+                .unwrap();
+        }
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Apply config");
+
+        self.apply_config(config)?;
+
+        #[cfg(feature = "defmt")]
+        defmt::debug!("Starting gnss");
+
+        unsafe {
+            nrfxlib_sys::nrf_modem_gnss_start();
+        }
+
+        Ok(GnssDataIter::new(false))
+    }
+
+    pub fn start_periodic_fix<'s>(
+        &'s mut self,
+        config: GnssConfig,
+        period_seconds: u16,
+    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + 's, Error> {
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Setting single fix");
+
+        unsafe {
+            nrfxlib_sys::nrf_modem_gnss_fix_interval_set(period_seconds.max(10))
+                .into_result()
+                .unwrap();
+        }
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Apply config");
+
+        self.apply_config(config)?;
+
+        #[cfg(feature = "defmt")]
+        defmt::debug!("Starting gnss");
+
+        unsafe {
+            nrfxlib_sys::nrf_modem_gnss_start();
+        }
+
+        Ok(GnssDataIter::new(false))
     }
 
     fn apply_config(&mut self, config: GnssConfig) -> Result<(), Error> {
@@ -408,22 +466,24 @@ impl GnssData {
     }
 }
 
-struct GnssDataIter {
+struct GnssDataIter<'g> {
     single_fix: bool,
     done: bool,
+    _phantom: PhantomData<&'g ()>,
 }
 
-impl GnssDataIter {
+impl<'g> GnssDataIter<'g> {
     fn new(single_fix: bool) -> Self {
         GNSS_NOTICED_EVENTS.store(0, Ordering::SeqCst);
         Self {
             single_fix,
             done: false,
+            _phantom: Default::default(),
         }
     }
 }
 
-impl Stream for GnssDataIter {
+impl<'g> Stream for GnssDataIter<'g> {
     type Item = Result<GnssData, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -481,6 +541,19 @@ impl Stream for GnssDataIter {
         match data {
             Some(data) => Poll::Ready(Some(data)),
             None => Poll::Pending,
+        }
+    }
+}
+
+impl<'g> Drop for GnssDataIter<'g> {
+    fn drop(&mut self) {
+        if !self.done {
+            unsafe {
+                #[cfg(feature = "defmt")]
+                defmt::debug!("Stopping gnss");
+
+                nrfxlib_sys::nrf_modem_gnss_stop();
+            }
         }
     }
 }

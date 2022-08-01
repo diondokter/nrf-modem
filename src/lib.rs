@@ -7,6 +7,7 @@ use error::Error;
 use linked_list_allocator::Heap;
 
 pub mod at;
+pub mod at_notifications;
 pub mod error;
 pub mod ffi;
 pub mod gnss;
@@ -108,8 +109,11 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
     unsafe { nrfxlib_sys::nrf_modem_init(&params, nrfxlib_sys::nrf_modem_mode_t_NORMAL_MODE) }
         .into_result()?;
 
+    // Initialize AT notifications
+    at_notifications::initialize()?;
+
     // Turn off the modem
-    let (modem_state, ) =
+    let (modem_state,) =
         at_commands::parser::CommandParser::parse(at::send_at("AT+CFUN?").await?.as_bytes())
             .expect_identifier(b"+CFUN: ")
             .expect_int_parameter()
@@ -228,7 +232,7 @@ pub async fn configure_gnss_on_pca10090ns() -> Result<(), Error> {
     #[cfg(feature = "defmt")]
     defmt::debug!("Configuring XMAGPIO pins for 1574-1577 MHz");
 
-	// Configure the GNSS antenna. See `nrf/samples/nrf9160/gps/src/main.c`.
-	crate::at::send_at("AT%XMAGPIO=1,0,0,1,1,1574,1577").await?;
-	Ok(())
+    // Configure the GNSS antenna. See `nrf/samples/nrf9160/gps/src/main.c`.
+    crate::at::send_at("AT%XMAGPIO=1,0,0,1,1,1574,1577").await?;
+    Ok(())
 }
