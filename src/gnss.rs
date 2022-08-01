@@ -1,24 +1,42 @@
 use crate::error::{Error, ErrorSource};
+use arrayvec::{ArrayString, ArrayVec};
 use core::{
+    cell::RefCell,
     mem::{size_of, MaybeUninit},
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
     task::{Context, Poll},
 };
-use arrayvec::ArrayString;
-use embassy::waitqueue::AtomicWaker;
+use embassy::{blocking_mutex::CriticalSectionMutex, waitqueue::AtomicWaker};
 use futures::Stream;
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
+const MAX_NMEA_BURST_SIZE: usize = 5;
+
 static GNSS_WAKER: AtomicWaker = AtomicWaker::new();
-static LAST_GNSS_EVENT: AtomicU32 = AtomicU32::new(0);
+static GNSS_NOTICED_EVENTS: AtomicU32 = AtomicU32::new(0);
+static GNSS_NMEA_STRINGS: CriticalSectionMutex<
+    RefCell<ArrayVec<Result<GnssData, Error>, MAX_NMEA_BURST_SIZE>>,
+> = CriticalSectionMutex::new(RefCell::new(ArrayVec::new_const()));
 static GNSS_TAKEN: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "C" fn gnss_callback(event: i32) {
-    #[cfg(feature = "defmt")]
-    defmt::trace!("Gnss -> {}", GnssEventType::from(event as u32));
+    let event_type = GnssEventType::from(event as u32);
 
-    LAST_GNSS_EVENT.fetch_or(1 << event as u32, Ordering::SeqCst);
+    #[cfg(feature = "defmt")]
+    defmt::trace!("Gnss -> {}", event_type);
+
+    if matches!(event_type, GnssEventType::Nmea) {
+        GNSS_NMEA_STRINGS.lock(|strings| {
+            strings
+                .borrow_mut()
+                .try_push(GnssData::read_from_modem(GnssDataType::Nmea))
+                .ok();
+        })
+    }
+
+    GNSS_NOTICED_EVENTS.fetch_or(1 << event as u32, Ordering::SeqCst);
+
     GNSS_WAKER.wake();
 }
 
@@ -212,8 +230,8 @@ pub struct GnssConfig {
     /// Satellites with elevation angle less than the threshold are excluded from the estimation.
     ///
     /// Default value: 5 deg
-    elevation_threshold_angle: u8,
-    use_case: GnssUsecase,
+    pub elevation_threshold_angle: u8,
+    pub use_case: GnssUsecase,
     /// Retry time in seconds.
     ///
     /// Fix retry parameter controls the maximum time the GNSS receiver is allowed to run while trying to produce a valid PVT estimate.
@@ -221,10 +239,10 @@ pub struct GnssConfig {
     /// If fix retry parameter is set to zero, the GNSS receiver is allowed to run indefinitely until a valid PVT estimate is produced.
     ///
     /// Default value: 60s
-    fix_retry: u16,
-    nmea_mask: NmeaMask,
-    timing_source: GnssTimingSource,
-    power_mode: GnssPowerSaveMode,
+    pub fix_retry: u16,
+    pub nmea_mask: NmeaMask,
+    pub timing_source: GnssTimingSource,
+    pub power_mode: GnssPowerSaveMode,
 }
 
 impl Default for GnssConfig {
@@ -350,7 +368,8 @@ impl GnssData {
                 }
             }
             GnssDataType::Nmea => {
-                let mut data: MaybeUninit<nrfxlib_sys::nrf_modem_gnss_nmea_data_frame> = MaybeUninit::uninit();
+                let mut data: MaybeUninit<nrfxlib_sys::nrf_modem_gnss_nmea_data_frame> =
+                    MaybeUninit::uninit();
 
                 unsafe {
                     nrfxlib_sys::nrf_modem_gnss_read(
@@ -362,7 +381,13 @@ impl GnssData {
 
                     let data = data.assume_init().nmea_str;
                     let mut string_data = ArrayString::from_byte_string(&data)?;
-                    string_data.truncate(string_data.as_bytes().iter().take_while(|b| **b != 0).count());
+                    string_data.truncate(
+                        string_data
+                            .as_bytes()
+                            .iter()
+                            .take_while(|b| **b != 0)
+                            .count(),
+                    );
                     Ok(GnssData::Nmea(string_data))
                 }
             }
@@ -390,7 +415,7 @@ struct GnssDataIter {
 
 impl GnssDataIter {
     fn new(single_fix: bool) -> Self {
-        LAST_GNSS_EVENT.store(0, Ordering::SeqCst);
+        GNSS_NOTICED_EVENTS.store(0, Ordering::SeqCst);
         Self {
             single_fix,
             done: false,
@@ -409,11 +434,10 @@ impl Stream for GnssDataIter {
             return Poll::Ready(None);
         }
 
-        let event_bits = LAST_GNSS_EVENT.load(Ordering::SeqCst);
+        let event_bits = GNSS_NOTICED_EVENTS.load(Ordering::SeqCst);
         let event = GnssEventType::get_from_bit_packed(event_bits);
 
-        #[cfg(feature = "defmt")]
-        defmt::trace!("Gnss event: {}", event);
+        let mut left_over_nmea_strings = false;
 
         let data = match event {
             GnssEventType::Pvt => Some(GnssData::read_from_modem(
@@ -428,7 +452,10 @@ impl Stream for GnssDataIter {
             GnssEventType::GnssFix => Some(GnssData::read_from_modem(
                 GnssDataType::PositionVelocityTime,
             )),
-            GnssEventType::Nmea => Some(GnssData::read_from_modem(GnssDataType::Nmea)),
+            GnssEventType::Nmea => GNSS_NMEA_STRINGS.lock(|strings| {
+                left_over_nmea_strings = strings.borrow_mut().len() > 1;
+                strings.borrow_mut().pop_at(0)
+            }),
             GnssEventType::AgpsRequest => Some(GnssData::read_from_modem(GnssDataType::Agps)),
             GnssEventType::RetryTimeoutReached | GnssEventType::SleepAfterFix
                 if self.single_fix =>
@@ -439,9 +466,13 @@ impl Stream for GnssDataIter {
             _ => None,
         };
 
-        let left_over_event_bits = LAST_GNSS_EVENT.fetch_and(!(1 << event as u32), Ordering::SeqCst);
+        let left_over_event_bits = if !left_over_nmea_strings {
+            GNSS_NOTICED_EVENTS.fetch_and(!(1 << event as u32), Ordering::SeqCst) != 0
+        } else {
+            true
+        };
 
-        if left_over_event_bits > 0 {
+        if left_over_event_bits {
             cx.waker().wake_by_ref();
         } else {
             GNSS_WAKER.register(cx.waker());
