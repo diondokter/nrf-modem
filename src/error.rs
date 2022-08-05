@@ -9,6 +9,7 @@ pub enum Error {
     GnssAlreadyTaken,
     NrfError(i32),
     BufferTooSmall(Option<usize>),
+    OutOfMemory,
     AtParseError(ParseError),
     InvalidSystemModeConfig,
     StringNotNulTerminated,

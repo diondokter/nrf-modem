@@ -81,14 +81,42 @@ impl<'c> Future for SendATFuture<'c> {
                     defmt::unwrap!(core::str::from_utf8(self.command).ok())
                 );
 
+                // TODO: I don't like this allocation here. We need to put a null character after the command and that takes extra space
+                let (command, allocated) = if self.command.ends_with(&[0]) {
+                    (self.command.as_ptr(), false)
+                } else {
+                    unsafe {
+                        match nrfxlib_sys::nrf_modem_os_alloc((self.command.len() + 1) as u32) {
+                            allocation if !allocation.is_null() => {
+                                allocation.copy_from_nonoverlapping(
+                                    self.command.as_ptr() as *const _,
+                                    self.command.len(),
+                                );
+                                let allocation = allocation as *mut u8;
+                                *allocation.add(self.command.len()) = 0;
+                                (allocation as *const _, true)
+                            }
+                            _ => {
+                                return Poll::Ready(Err(Error::OutOfMemory));
+                            }
+                        }
+                    }
+                };
+
                 let result = unsafe {
                     nrfxlib_sys::nrf_modem_at_cmd_async(
                         Some(at_callback),
                         b"%s\0".as_ptr(),
-                        self.command,
+                        command,
                     )
                     .into_result()
                 };
+
+                if allocated {
+                    unsafe {
+                        nrfxlib_sys::nrf_modem_os_free(command as *mut _);
+                    }
+                }
 
                 match result {
                     Ok(_) => {
