@@ -11,6 +11,9 @@ pub mod at_notifications;
 pub mod error;
 pub mod ffi;
 pub mod gnss;
+pub(crate) mod socket;
+pub mod tcp_stream;
+pub(crate) mod waker_node_list;
 
 /// We need to wrap our heap so it's creatable at run-time and accessible from an ISR.
 ///
