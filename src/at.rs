@@ -37,6 +37,14 @@ pub async fn send_at(command: &str) -> Result<ArrayString<256>, Error> {
     .await
 }
 
+pub fn send_at_blocking(command: &str) -> Result<ArrayString<256>, Error> {
+    todo!()
+    // let mut buffer = ArrayString::new();
+    // unsafe {
+    //     nrfxlib_sys::nrf_modem_at_cmd(buffer.as_mut_ptr() as _, 256, )
+    // }
+}
+
 pub async fn send_at_bytes(command: &[u8]) -> Result<ArrayString<256>, Error> {
     SendATFuture {
         state: Default::default(),
@@ -128,7 +136,7 @@ impl<'c> Future for SendATFuture<'c> {
             }
             SendATState::WaitingOnData => {
                 match AT_DATA
-                    .lock(|data| (!data.borrow().is_empty()).then(|| data.borrow().clone()))
+                    .lock(|data| (!data.borrow().is_empty()).then(|| *data.borrow()))
                 {
                     Some(data) => {
                         AT_PROGRESS.store(false, Ordering::SeqCst);

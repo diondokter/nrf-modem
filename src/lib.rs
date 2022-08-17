@@ -15,6 +15,8 @@ pub(crate) mod socket;
 pub mod tcp_stream;
 pub(crate) mod waker_node_list;
 
+pub use no_std_net;
+
 /// We need to wrap our heap so it's creatable at run-time and accessible from an ISR.
 ///
 /// * The Mutex allows us to safely share the heap between interrupt routines

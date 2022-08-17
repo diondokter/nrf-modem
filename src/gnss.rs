@@ -65,10 +65,10 @@ impl Gnss {
         Ok(Gnss {})
     }
 
-    pub fn start_single_fix<'s>(
-        &'s mut self,
+    pub fn start_single_fix(
+        &mut self,
         config: GnssConfig,
-    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + 's, Error> {
+    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + '_, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -93,10 +93,10 @@ impl Gnss {
         Ok(GnssDataIter::new(true))
     }
 
-    pub fn start_continuous_fix<'s>(
-        &'s mut self,
+    pub fn start_continuous_fix(
+        &mut self,
         config: GnssConfig,
-    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + 's, Error> {
+    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + '_, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -121,11 +121,11 @@ impl Gnss {
         Ok(GnssDataIter::new(false))
     }
 
-    pub fn start_periodic_fix<'s>(
-        &'s mut self,
+    pub fn start_periodic_fix(
+        &mut self,
         config: GnssConfig,
         period_seconds: u16,
-    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + 's, Error> {
+    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + '_, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -205,23 +205,23 @@ impl Default for NmeaMask {
 impl From<NmeaMask> for u16 {
     fn from(mask: NmeaMask) -> Self {
         mask.gga
-            .then(|| nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GGA_MASK as u16)
+            .then_some(nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GGA_MASK as u16)
             .unwrap_or(0)
             | mask
                 .gll
-                .then(|| nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GLL_MASK as u16)
+                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GLL_MASK as u16)
                 .unwrap_or(0)
             | mask
                 .gsa
-                .then(|| nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GSA_MASK as u16)
+                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GSA_MASK as u16)
                 .unwrap_or(0)
             | mask
                 .gsv
-                .then(|| nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GSV_MASK as u16)
+                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GSV_MASK as u16)
                 .unwrap_or(0)
             | mask
                 .rmc
-                .then(|| nrfxlib_sys::NRF_MODEM_GNSS_NMEA_RMC_MASK as u16)
+                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_NMEA_RMC_MASK as u16)
                 .unwrap_or(0)
     }
 }
@@ -352,11 +352,11 @@ impl From<GnssUsecase> for u8 {
         nrfxlib_sys::NRF_MODEM_GNSS_USE_CASE_MULTIPLE_HOT_START as u8
             | usecase
                 .low_accuracy
-                .then(|| nrfxlib_sys::NRF_MODEM_GNSS_USE_CASE_LOW_ACCURACY as u8)
+                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_USE_CASE_LOW_ACCURACY as u8)
                 .unwrap_or(0)
             | usecase
                 .scheduled_downloads_disable
-                .then(|| nrfxlib_sys::NRF_MODEM_GNSS_USE_CASE_SCHED_DOWNLOAD_DISABLE as u8)
+                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_USE_CASE_SCHED_DOWNLOAD_DISABLE as u8)
                 .unwrap_or(0)
     }
 }

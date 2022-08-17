@@ -137,33 +137,31 @@ pub extern "C" fn nrf_modem_os_busywait(usec: i32) {
 /// - -NRF_EAGAIN – The timeout expired.
 /// - -NRF_ESHUTDOWN – Modem is not initialized, or was shut down.
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_timedwait(_context: u32, timeout: *mut i32) -> i32 {
-    unsafe {
-        if nrf_modem_os_is_in_isr() {
-            return -(nrfxlib_sys::NRF_EPERM as i32);
-        }
+pub unsafe extern "C" fn nrf_modem_os_timedwait(_context: u32, timeout: *mut i32) -> i32 {
+    if nrf_modem_os_is_in_isr() {
+        return -(nrfxlib_sys::NRF_EPERM as i32);
+    }
 
-        if !nrfxlib_sys::nrf_modem_is_initialized() {
-            return -(nrfxlib_sys::NRF_ESHUTDOWN as i32);
-        }
+    if !nrfxlib_sys::nrf_modem_is_initialized() {
+        return -(nrfxlib_sys::NRF_ESHUTDOWN as i32);
+    }
 
-        if *timeout < -2 {
-            // With Zephyr, negative timeouts pend on a semaphore with K_FOREVER.
-            // We can't do that here.
-            0i32
-        } else {
-            loop {
-                nrf_modem_os_busywait(1000);
+    if *timeout < -2 {
+        // With Zephyr, negative timeouts pend on a semaphore with K_FOREVER.
+        // We can't do that here.
+        0i32
+    } else {
+        loop {
+            nrf_modem_os_busywait(1000);
 
-                if NOTIFY_ACTIVE.swap(false, Ordering::Relaxed) {
-                    return 0;
-                }
+            if NOTIFY_ACTIVE.swap(false, Ordering::Relaxed) {
+                return 0;
+            }
 
-                match *timeout {
-                    -1 => continue,
-                    0 => return -(nrfxlib_sys::NRF_EAGAIN as i32),
-                    _ => *timeout -= 1,
-                }
+            match *timeout {
+                -1 => continue,
+                0 => return -(nrfxlib_sys::NRF_EAGAIN as i32),
+                _ => *timeout -= 1,
             }
         }
     }
@@ -175,6 +173,8 @@ pub extern "C" fn nrf_modem_os_timedwait(_context: u32, timeout: *mut i32) -> i3
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_event_notify() {
     NOTIFY_ACTIVE.store(true, Ordering::SeqCst);
+    // Wake up all the waiting sockets
+    crate::socket::WAKER_NODE_LIST.lock(|list| list.borrow_mut().wake_all(|_| {}))
 }
 
 /// Function required by BSD library
@@ -208,10 +208,8 @@ pub extern "C" fn nrf_modem_os_alloc(num_bytes_requested: usize) -> *mut u8 {
 /// can be located anywhere in the application core's RAM instead of the shared
 /// memory regions. This function allocates dynamic memory for the library.
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_free(ptr: *mut u8) {
-    unsafe {
-        generic_free(ptr, &crate::LIBRARY_ALLOCATOR);
-    }
+pub unsafe extern "C" fn nrf_modem_os_free(ptr: *mut u8) {
+    generic_free(ptr, &crate::LIBRARY_ALLOCATOR);
 }
 
 /// Allocate a buffer on the TX area of shared memory.
@@ -227,10 +225,8 @@ pub extern "C" fn nrf_modem_os_shm_tx_alloc(num_bytes_requested: usize) -> *mut 
 ///
 /// @param ptr Th buffer to free.
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_shm_tx_free(ptr: *mut u8) {
-    unsafe {
-        generic_free(ptr, &crate::TX_ALLOCATOR);
-    }
+pub unsafe extern "C" fn nrf_modem_os_shm_tx_free(ptr: *mut u8) {
+    generic_free(ptr, &crate::TX_ALLOCATOR);
 }
 
 #[no_mangle]
@@ -247,23 +243,21 @@ pub extern "C" fn nrf_modem_os_trace_free(_mem: *mut u8) {
 ///
 /// @param p_config Pointer to the structure with the initial configuration.
 #[no_mangle]
-pub extern "C" fn nrfx_ipc_config_load(p_config: *const NrfxIpcConfig) {
-    unsafe {
-        let config: &NrfxIpcConfig = &*p_config;
+pub unsafe extern "C" fn nrfx_ipc_config_load(p_config: *const NrfxIpcConfig) {
+    let config: &NrfxIpcConfig = &*p_config;
 
-        let ipc = &(*nrf9160_pac::IPC_NS::ptr());
+    let ipc = &(*nrf9160_pac::IPC_NS::ptr());
 
-        for (i, value) in config.send_task_config.iter().enumerate() {
-            ipc.send_cnf[i as usize].write(|w| w.bits(*value));
-        }
-
-        for (i, value) in config.receive_event_config.iter().enumerate() {
-            ipc.receive_cnf[i as usize].write(|w| w.bits(*value));
-        }
-
-        ipc.intenset
-            .write(|w| w.bits(config.receive_events_enabled));
+    for (i, value) in config.send_task_config.iter().enumerate() {
+        ipc.send_cnf[i as usize].write(|w| w.bits(*value));
     }
+
+    for (i, value) in config.receive_event_config.iter().enumerate() {
+        ipc.receive_cnf[i as usize].write(|w| w.bits(*value));
+    }
+
+    ipc.intenset
+        .write(|w| w.bits(config.receive_events_enabled));
 }
 
 ///
@@ -412,35 +406,33 @@ pub unsafe fn nrf_ipc_irq_handler() {
 /// **Returns**
 /// - 0 on success, a negative errno otherwise.
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_sem_init(
+pub unsafe extern "C" fn nrf_modem_os_sem_init(
     sem: *mut *mut nrfxlib_sys::ctypes::c_void,
     initial_count: nrfxlib_sys::ctypes::c_uint,
     limit: nrfxlib_sys::ctypes::c_uint,
 ) -> nrfxlib_sys::ctypes::c_int {
-    unsafe {
-        if sem.is_null() || initial_count > limit {
-            return -(nrfxlib_sys::NRF_EINVAL as i32);
-        }
-
-        // Allocate if we need to
-        if (*sem).is_null() {
-            // Allocate our semaphore datastructure
-            *sem = nrf_modem_os_alloc(core::mem::size_of::<Semaphore>()) as *mut _;
-
-            if (*sem).is_null() {
-                // We are out of memory
-                return -(nrfxlib_sys::NRF_ENOMEM as i32);
-            }
-        }
-
-        // Initialize the data
-        *((*sem) as *mut Semaphore) = Semaphore {
-            max_value: limit,
-            current_value: AtomicU32::new(initial_count),
-        };
-
-        0
+    if sem.is_null() || initial_count > limit {
+        return -(nrfxlib_sys::NRF_EINVAL as i32);
     }
+
+    // Allocate if we need to
+    if (*sem).is_null() {
+        // Allocate our semaphore datastructure
+        *sem = nrf_modem_os_alloc(core::mem::size_of::<Semaphore>()) as *mut _;
+
+        if (*sem).is_null() {
+            // We are out of memory
+            return -(nrfxlib_sys::NRF_ENOMEM as i32);
+        }
+    }
+
+    // Initialize the data
+    *((*sem) as *mut Semaphore) = Semaphore {
+        max_value: limit,
+        current_value: AtomicU32::new(initial_count),
+    };
+
+    0
 }
 
 /// Give a semaphore.
@@ -460,7 +452,7 @@ pub extern "C" fn nrf_modem_os_sem_give(sem: *mut nrfxlib_sys::ctypes::c_void) {
         (*(sem as *mut Semaphore))
             .current_value
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |val| {
-                (val < max_value).then(|| val + 1)
+                (val < max_value).then_some(val + 1)
             })
             .ok();
     }
@@ -495,7 +487,7 @@ pub extern "C" fn nrf_modem_os_sem_take(
             if (*(sem as *mut Semaphore))
                 .current_value
                 .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |val| {
-                    (val > 0).then(|| val - 1)
+                    (val > 0).then_some(val - 1)
                 })
                 .is_ok()
             {
@@ -547,4 +539,9 @@ struct Semaphore {
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_is_in_isr() -> bool {
     cortex_m::peripheral::SCB::vect_active() != cortex_m::peripheral::scb::VectActive::ThreadMode
+}
+
+#[no_mangle]
+pub extern "C" fn abs(x: i32) -> i32 {
+    x.abs()
 }

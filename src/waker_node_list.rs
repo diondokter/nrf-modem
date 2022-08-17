@@ -1,13 +1,13 @@
 // Ok, this is gonna be really unsafe...
 pub struct WakerNode<T: ?Sized> {
-    pub context: *mut T,
+    pub context: Option<*mut T>,
     pub waker: core::task::Waker,
     previous_node: Option<*mut WakerNode<T>>,
     next_node: Option<*mut WakerNode<T>>,
 }
 
 impl<T: ?Sized> WakerNode<T> {
-    pub fn new(context: *mut T, waker: core::task::Waker) -> Self {
+    pub fn new(context: Option<*mut T>, waker: core::task::Waker) -> Self {
         Self {
             context,
             waker,
@@ -35,7 +35,11 @@ impl<T: ?Sized> WakerNodeList<T> {
         }
 
         let mut other = match self.next_node {
-            Some(other) => other,
+            Some(other) if other != node => other,
+            Some(_) => {
+                // Already in the list
+                return;
+            }
             None => {
                 self.next_node = Some(node);
                 return;
@@ -45,7 +49,11 @@ impl<T: ?Sized> WakerNodeList<T> {
         // Find the last one in the chain of the others
         loop {
             match (*other).next_node {
-                Some(next_node) => other = next_node,
+                Some(next_node) if next_node != node => other = next_node,
+                Some(_) => {
+                    // Already in the list
+                    return;
+                }
                 None => break,
             }
         }
@@ -62,14 +70,12 @@ impl<T: ?Sized> WakerNodeList<T> {
         let next_node = (*node).next_node;
         let previous_node = (*node).previous_node;
 
-        match next_node {
-            Some(next_node) => (*next_node).previous_node = previous_node,
-            None => {}
+        if let Some(next_node) = next_node {
+            (*next_node).previous_node = previous_node
         }
 
-        match previous_node {
-            Some(previous_node) => (*previous_node).next_node = next_node,
-            None => {}
+        if let Some(previous_node) = previous_node {
+            (*previous_node).next_node = next_node
         }
 
         if self.next_node == Some(node) {
@@ -89,8 +95,11 @@ impl<T: ?Sized> WakerNodeList<T> {
 
         unsafe {
             loop {
-                // Write the notification to the node's buffer
-                wake_function(&mut (*(*node).context));
+                // Run the callback if there is a context
+                if let Some(context) = (*node).context {
+                    wake_function(&mut *context);
+                }
+
                 // Wake the node
                 (*node).waker.wake_by_ref();
 

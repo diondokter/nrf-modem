@@ -56,7 +56,9 @@ impl<const CAP: usize> Future for AtNotificationFuture<CAP> {
             }
 
             let buffer_ptr = &mut self.buffer as *mut dyn NotificationBuffer;
-            let waker_node = self.waker_node.get_or_insert_with(|| WakerNode::new(buffer_ptr, cx.waker().clone()));
+            let waker_node = self
+                .waker_node
+                .get_or_insert_with(|| WakerNode::new(Some(buffer_ptr), cx.waker().clone()));
 
             unsafe { list.borrow_mut().append_node(waker_node as *mut _) };
 
