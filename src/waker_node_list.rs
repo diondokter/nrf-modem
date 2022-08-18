@@ -95,6 +95,9 @@ impl<T: ?Sized> WakerNodeList<T> {
 
         unsafe {
             loop {
+                #[cfg(feature = "defmt")]
+                defmt::trace!("Waking up node");            
+
                 // Run the callback if there is a context
                 if let Some(context) = (*node).context {
                     wake_function(&mut *context);

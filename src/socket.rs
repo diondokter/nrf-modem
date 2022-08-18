@@ -1,3 +1,4 @@
+use crate::at;
 use crate::waker_node_list::{WakerNode, WakerNodeList};
 use crate::{error::Error, ffi::get_last_error};
 use core::mem::size_of;
@@ -70,15 +71,17 @@ impl Socket {
         Ok(Socket { fd })
     }
 
-    pub fn connect(
-        &mut self,
-        address: SocketAddr,
-    ) -> impl Future<Output = Result<(), Error>> + '_ {
+    pub async fn connect(&mut self, address: SocketAddr) -> Result<(), Error> {
+        wait_for_lte().await?;
+
         ConnectFuture {
             fd: &self.fd,
             address,
             waker_node: None,
         }
+        .await?;
+
+        Ok(())
     }
 }
 
@@ -123,7 +126,7 @@ impl<'s> Future for ConnectFuture<'s> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Connecting socket {}", self.fd);
 
-        let connect_result = match self.address {
+        let mut connect_result = match self.address {
             SocketAddr::V4(addr) => {
                 let nrf_addr = nrfxlib_sys::nrf_sockaddr_in {
                     sin_len: size_of::<nrfxlib_sys::nrf_sockaddr_in>() as u8,
@@ -166,8 +169,14 @@ impl<'s> Future for ConnectFuture<'s> {
 
         const NRF_EINPROGRESS: i32 = nrfxlib_sys::NRF_EINPROGRESS as i32;
 
+        if connect_result == -1 {
+            connect_result = get_last_error();
+        }
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Connect result {}", connect_result);
+
         match connect_result {
-            -1 => core::task::Poll::Ready(Err(Error::NrfError(get_last_error()))),
             0 => Poll::Ready(Ok(())),
             NRF_EINPROGRESS => Poll::Pending,
             error => Poll::Ready(Err(Error::NrfError(error))),
@@ -213,4 +222,24 @@ pub enum SocketProtocol {
     All = nrfxlib_sys::NRF_IPPROTO_ALL,
     Tls1v2 = nrfxlib_sys::NRF_SPROTO_TLS1v2,
     DTls1v2 = nrfxlib_sys::NRF_SPROTO_DTLS1v2,
+}
+
+async fn wait_for_lte() -> Result<(), Error> {
+    loop {
+        let answer = at::send_at("AT+CEREG?").await?;
+
+        let (_, stat) = at_commands::parser::CommandParser::parse(answer.as_bytes())
+            .expect_identifier(b"+CEREG:")
+            .expect_int_parameter()
+            .expect_int_parameter()
+            .finish()?;
+
+        match stat {
+            1 | 5 => return Ok(()),
+            0 | 2 | 4 => continue,
+            3 => return Err(Error::LteRegistrationDenied),
+            90 => return Err(Error::SimFailure),
+            _ => return Err(Error::UnexpectedAtResponse),
+        }
+    }
 }

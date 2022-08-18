@@ -155,6 +155,8 @@ pub fn application_irq_handler() {
     unsafe {
         nrfxlib_sys::nrf_modem_application_irq_handler();
         nrfxlib_sys::nrf_modem_os_event_notify();
+        // Wake up all the waiting sockets
+        crate::socket::WAKER_NODE_LIST.lock(|list| list.borrow_mut().wake_all(|_| {}))
     }
 }
 
@@ -176,7 +178,7 @@ pub fn ipc_irq_handler() {
 
 /// Identifies which radios in the nRF9160 should be active
 ///
-/// Based on: https://infocenter.nordicsemi.com/index.jsp?topic=%2Fref_at_commands%2FREF%2Fat_commands%2Fmob_termination_ctrl_status%2Fcfun.html
+/// Based on: <https://infocenter.nordicsemi.com/index.jsp?topic=%2Fref_at_commands%2FREF%2Fat_commands%2Fmob_termination_ctrl_status%2Fcfun.html>
 #[derive(Debug, Copy, Clone)]
 pub struct SystemMode {
     pub lte_support: bool,

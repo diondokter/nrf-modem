@@ -173,8 +173,6 @@ pub unsafe extern "C" fn nrf_modem_os_timedwait(_context: u32, timeout: *mut i32
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_event_notify() {
     NOTIFY_ACTIVE.store(true, Ordering::SeqCst);
-    // Wake up all the waiting sockets
-    crate::socket::WAKER_NODE_LIST.lock(|list| list.borrow_mut().wake_all(|_| {}))
 }
 
 /// Function required by BSD library

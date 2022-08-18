@@ -38,11 +38,24 @@ pub async fn send_at(command: &str) -> Result<ArrayString<256>, Error> {
 }
 
 pub fn send_at_blocking(command: &str) -> Result<ArrayString<256>, Error> {
-    todo!()
-    // let mut buffer = ArrayString::new();
-    // unsafe {
-    //     nrfxlib_sys::nrf_modem_at_cmd(buffer.as_mut_ptr() as _, 256, )
-    // }
+    #[cfg(feature = "defmt")]
+    defmt::trace!("AT -> {}", command);
+
+    let mut buffer = ArrayString::new();
+    unsafe {
+        nrfxlib_sys::nrf_modem_at_cmd(
+            buffer.as_mut_ptr() as _,
+            256,
+            b"%s\0".as_ptr(),
+            command.as_ptr(),
+        )
+        .into_result()?;
+    }
+
+    #[cfg(feature = "defmt")]
+    defmt::trace!("AT <- {}", buffer.as_str());
+
+    Ok(buffer)
 }
 
 pub async fn send_at_bytes(command: &[u8]) -> Result<ArrayString<256>, Error> {
@@ -135,9 +148,7 @@ impl<'c> Future for SendATFuture<'c> {
                 }
             }
             SendATState::WaitingOnData => {
-                match AT_DATA
-                    .lock(|data| (!data.borrow().is_empty()).then(|| *data.borrow()))
-                {
+                match AT_DATA.lock(|data| (!data.borrow().is_empty()).then(|| *data.borrow())) {
                     Some(data) => {
                         AT_PROGRESS.store(false, Ordering::SeqCst);
                         AT_PROGRESS_WAKER.wake();

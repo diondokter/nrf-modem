@@ -14,6 +14,9 @@ pub enum Error {
     InvalidSystemModeConfig,
     StringNotNulTerminated,
     Utf8Error,
+    LteRegistrationDenied,
+    SimFailure,
+    UnexpectedAtResponse,
 }
 
 pub trait ErrorSource {
