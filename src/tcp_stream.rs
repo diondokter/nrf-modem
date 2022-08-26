@@ -25,7 +25,7 @@ impl TcpStream {
                             Socket::create(
                                 SocketFamily::Ipv4,
                                 SocketType::Stream,
-                                SocketProtocol::IP,
+                                SocketProtocol::Tcp,
                             )
                             .await?,
                         );
@@ -39,7 +39,7 @@ impl TcpStream {
                             Socket::create(
                                 SocketFamily::Ipv6,
                                 SocketType::Stream,
-                                SocketProtocol::Ipv6,
+                                SocketProtocol::Tcp,
                             )
                             .await?,
                         );
@@ -63,11 +63,31 @@ impl TcpStream {
         Err(last_error.take().unwrap())
     }
 
-    pub fn try_read(&self, _buf: &mut [u8]) -> Result<usize, Error> {
-        todo!()
+    pub async fn receive<'buf>(&self, buf: &'buf mut [u8]) -> Result<&'buf mut [u8], Error> {
+        let max_receive_len = 1024.min(buf.len());
+        let received_bytes = self.inner.receive(&mut buf[..max_receive_len]).await?;
+        Ok(&mut buf[..received_bytes])
     }
 
-    pub fn try_write(&self, _buf: &[u8]) -> Result<usize, Error> {
-        todo!()
+    pub async fn receive_exact(&self, buf: &mut [u8]) -> Result<(), Error> {
+        let mut received_bytes = 0;
+
+        while received_bytes < buf.len() {
+            received_bytes += self.receive(&mut buf[received_bytes..]).await?.len();
+        }
+
+        Ok(())
+    }
+
+    pub async fn send(&self, buf: &[u8]) -> Result<(), Error> {
+        let mut sent_bytes = 0;
+        
+        while sent_bytes < buf.len() {
+            // We can't send very huge chunks because then the socket can't process it all at once
+            let max_send_len = 1024.min(buf.len() - sent_bytes);
+            sent_bytes += self.inner.send(&buf[sent_bytes..][..max_send_len]).await?;   
+        }
+
+        Ok(())
     }
 }

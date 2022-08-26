@@ -17,6 +17,9 @@ pub enum Error {
     LteRegistrationDenied,
     SimFailure,
     UnexpectedAtResponse,
+    HostnameNotAscii,
+    HostnameTooLong,
+    AddressNotFound,
 }
 
 pub trait ErrorSource {

@@ -8,9 +8,11 @@ use linked_list_allocator::Heap;
 
 pub mod at;
 pub mod at_notifications;
+pub mod dns;
 pub mod error;
 pub mod ffi;
 pub mod gnss;
+pub mod lte_link;
 pub(crate) mod socket;
 pub mod tcp_stream;
 pub(crate) mod waker_node_list;

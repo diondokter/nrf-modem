@@ -1,15 +1,13 @@
-use crate::at;
+use crate::lte_link::LteLink;
 use crate::waker_node_list::{WakerNode, WakerNodeList};
 use crate::{error::Error, ffi::get_last_error};
 use core::mem::size_of;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::ops::Neg;
 use core::task::Poll;
 use core::{cell::RefCell, future::Future};
 use embassy::blocking_mutex::CriticalSectionMutex;
 use no_std_net::SocketAddr;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-
-static ACTIVE_SOCKETS: AtomicU32 = AtomicU32::new(0);
 
 pub(crate) static WAKER_NODE_LIST: CriticalSectionMutex<RefCell<WakerNodeList<()>>> =
     CriticalSectionMutex::new(RefCell::new(WakerNodeList::new()));
@@ -17,6 +15,7 @@ pub(crate) static WAKER_NODE_LIST: CriticalSectionMutex<RefCell<WakerNodeList<()
 #[derive(Debug, PartialEq, Eq)]
 pub struct Socket {
     fd: i32,
+    link: LteLink,
 }
 
 impl Socket {
@@ -26,7 +25,14 @@ impl Socket {
         protocol: SocketProtocol,
     ) -> Result<Self, Error> {
         #[cfg(feature = "defmt")]
-        defmt::trace!("Creating socket");
+        defmt::debug!(
+            "Creating socket with family: {}, type: {}, protocol: {}",
+            family as u32 as i32,
+            s_type as u32 as i32,
+            protocol as u32 as i32
+        );
+
+        let link = LteLink::new().await?;
 
         let fd = unsafe {
             nrfxlib_sys::nrf_socket(
@@ -53,26 +59,18 @@ impl Socket {
             }
         }
 
-        if ACTIVE_SOCKETS.fetch_add(1, Ordering::SeqCst) == 0 {
-            // We have to activate the modem
-            #[cfg(feature = "defmt")]
-            defmt::debug!("Enabling modem LTE");
-
-            // Set Ultra low power mode
-            crate::at::send_at("AT%XDATAPRFL=0").await?;
-            // Set UICC low power mode
-            crate::at::send_at("AT+CEPPI=1").await?;
-            // Set Power Saving Mode (PSM)
-            crate::at::send_at("AT+CPSMS=1").await?;
-            // Activate LTE without changing GNSS
-            crate::at::send_at("AT+CFUN=21").await?;
-        }
-
-        Ok(Socket { fd })
+        Ok(Socket { fd, link })
     }
 
-    pub async fn connect(&mut self, address: SocketAddr) -> Result<(), Error> {
-        wait_for_lte().await?;
+    pub async fn connect(&self, address: SocketAddr) -> Result<(), Error> {
+        #[cfg(feature = "defmt")]
+        defmt::debug!(
+            "Connecting socket {} to {:?}",
+            self.fd,
+            defmt::Debug2Format(&address)
+        );
+
+        self.link.wait_for_link().await?;
 
         ConnectFuture {
             fd: &self.fd,
@@ -83,15 +81,28 @@ impl Socket {
 
         Ok(())
     }
+
+    pub async fn send(&self, buffer: &[u8]) -> Result<usize, Error> {
+        SendFuture {
+            fd: &self.fd,
+            data: buffer,
+            waker_node: None,
+        }
+        .await
+    }
+
+    pub async fn receive<'buf>(&self, buffer: &'buf mut [u8]) -> Result<usize, Error> {
+        ReceiveFuture {
+            fd: &self.fd,
+            data: buffer,
+            waker_node: None,
+        }.await
+    }
 }
 
 impl Drop for Socket {
     fn drop(&mut self) {
         let e = unsafe { nrfxlib_sys::nrf_close(self.fd) };
-
-        if ACTIVE_SOCKETS.fetch_sub(1, Ordering::SeqCst) == 1 {
-            crate::at::send_at_blocking("AT+CFUN=20").unwrap();
-        }
 
         if e == -1 {
             Result::<(), _>::Err(Error::NrfError(get_last_error())).unwrap();
@@ -131,9 +142,9 @@ impl<'s> Future for ConnectFuture<'s> {
                 let nrf_addr = nrfxlib_sys::nrf_sockaddr_in {
                     sin_len: size_of::<nrfxlib_sys::nrf_sockaddr_in>() as u8,
                     sin_family: SocketFamily::Ipv4 as u32 as i32,
-                    sin_port: addr.port().to_be(), // Port must be in network order which is Big Endian
+                    sin_port: addr.port().to_be(),
                     sin_addr: nrfxlib_sys::nrf_in_addr {
-                        s_addr: (*addr.ip()).into(),
+                        s_addr: u32::to_be((*addr.ip()).into()),
                     },
                 };
 
@@ -146,12 +157,15 @@ impl<'s> Future for ConnectFuture<'s> {
                 }
             }
             SocketAddr::V6(addr) => {
+                let mut ip_octets = addr.ip().octets();
+                ip_octets.reverse();
+
                 let nrf_addr = nrfxlib_sys::nrf_sockaddr_in6 {
                     sin6_len: size_of::<nrfxlib_sys::nrf_sockaddr_in6>() as u8,
                     sin6_family: SocketFamily::Ipv6 as u32 as i32,
-                    sin6_port: addr.port().to_be(), // Port must be in network order which is Big Endian
+                    sin6_port: addr.port().to_be(),
                     sin6_addr: nrfxlib_sys::nrf_in6_addr {
-                        s6_addr: addr.ip().octets(),
+                        s6_addr: ip_octets,
                     },
                     sin6_flowinfo: addr.flowinfo(),
                     sin6_scope_id: addr.scope_id(),
@@ -168,6 +182,7 @@ impl<'s> Future for ConnectFuture<'s> {
         };
 
         const NRF_EINPROGRESS: i32 = nrfxlib_sys::NRF_EINPROGRESS as i32;
+        const NRF_EISCONN: i32 = nrfxlib_sys::NRF_EISCONN as i32;
 
         if connect_result == -1 {
             connect_result = get_last_error();
@@ -178,6 +193,7 @@ impl<'s> Future for ConnectFuture<'s> {
 
         match connect_result {
             0 => Poll::Ready(Ok(())),
+            NRF_EISCONN => Poll::Ready(Ok(())),
             NRF_EINPROGRESS => Poll::Pending,
             error => Poll::Ready(Err(Error::NrfError(error))),
         }
@@ -185,6 +201,127 @@ impl<'s> Future for ConnectFuture<'s> {
 }
 
 impl<'s> Drop for ConnectFuture<'s> {
+    fn drop(&mut self) {
+        if let Some(waker_node) = self.waker_node.as_mut() {
+            WAKER_NODE_LIST.lock(|list| unsafe {
+                list.borrow_mut().remove_node(waker_node as *mut _);
+            });
+        }
+    }
+}
+
+struct SendFuture<'s, 'd> {
+    fd: &'s i32,
+    data: &'d [u8],
+    waker_node: Option<WakerNode<()>>,
+}
+
+impl<'s, 'd> Future for SendFuture<'s, 'd> {
+    type Output = Result<usize, Error>;
+
+    fn poll(
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        // Register our waker node
+        WAKER_NODE_LIST.lock(|list| {
+            let waker_node = self
+                .waker_node
+                .get_or_insert_with(|| WakerNode::new(None, cx.waker().clone()));
+            waker_node.waker = cx.waker().clone();
+            unsafe {
+                list.borrow_mut().append_node(waker_node as *mut _);
+            }
+        });
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Sending with socket {}", self.fd);
+
+        let mut send_result = unsafe {
+            nrfxlib_sys::nrf_send(
+                *self.fd,
+                self.data.as_ptr() as *const _,
+                self.data.len() as u32,
+                0,
+            )
+        };
+
+        if send_result == -1 {
+            send_result = get_last_error().abs().neg();
+        }
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Send result {}", send_result);
+
+        const NRF_EWOULDBLOCK: i32 = -(nrfxlib_sys::NRF_EWOULDBLOCK as i32);
+
+        match send_result {
+            bytes_sent @ 0.. => Poll::Ready(Ok(bytes_sent as usize)),
+            NRF_EWOULDBLOCK => Poll::Pending,
+            error => Poll::Ready(Err(Error::NrfError(error))),
+        }
+    }
+}
+
+impl<'s, 'd> Drop for SendFuture<'s, 'd> {
+    fn drop(&mut self) {
+        if let Some(waker_node) = self.waker_node.as_mut() {
+            WAKER_NODE_LIST.lock(|list| unsafe {
+                list.borrow_mut().remove_node(waker_node as *mut _);
+            });
+        }
+    }
+}
+
+struct ReceiveFuture<'s, 'd> {
+    fd: &'s i32,
+    data: &'d mut [u8],
+    waker_node: Option<WakerNode<()>>,
+}
+
+impl<'s, 'd> Future for ReceiveFuture<'s, 'd> {
+    type Output = Result<usize, Error>;
+
+    fn poll(
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        // Register our waker node
+        WAKER_NODE_LIST.lock(|list| {
+            let waker_node = self
+                .waker_node
+                .get_or_insert_with(|| WakerNode::new(None, cx.waker().clone()));
+            waker_node.waker = cx.waker().clone();
+            unsafe {
+                list.borrow_mut().append_node(waker_node as *mut _);
+            }
+        });
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Receiving with socket {}", self.fd);
+
+        let mut receive_result = unsafe {
+            nrfxlib_sys::nrf_recv(*self.fd, self.data.as_ptr() as *mut _, self.data.len() as u32, 0)
+        };
+
+        if receive_result == -1 {
+            receive_result = get_last_error().abs().neg();
+        }
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Receive result {}", receive_result);
+
+        const NRF_EWOULDBLOCK: i32 = -(nrfxlib_sys::NRF_EWOULDBLOCK as i32);
+
+        match receive_result {
+            bytes_received @ 0.. => Poll::Ready(Ok(bytes_received as usize)),
+            NRF_EWOULDBLOCK => Poll::Pending,
+            error => Poll::Ready(Err(Error::NrfError(error))),
+        }
+    }
+}
+
+impl<'s, 'd> Drop for ReceiveFuture<'s, 'd> {
     fn drop(&mut self) {
         if let Some(waker_node) = self.waker_node.as_mut() {
             WAKER_NODE_LIST.lock(|list| unsafe {
@@ -222,24 +359,4 @@ pub enum SocketProtocol {
     All = nrfxlib_sys::NRF_IPPROTO_ALL,
     Tls1v2 = nrfxlib_sys::NRF_SPROTO_TLS1v2,
     DTls1v2 = nrfxlib_sys::NRF_SPROTO_DTLS1v2,
-}
-
-async fn wait_for_lte() -> Result<(), Error> {
-    loop {
-        let answer = at::send_at("AT+CEREG?").await?;
-
-        let (_, stat) = at_commands::parser::CommandParser::parse(answer.as_bytes())
-            .expect_identifier(b"+CEREG:")
-            .expect_int_parameter()
-            .expect_int_parameter()
-            .finish()?;
-
-        match stat {
-            1 | 5 => return Ok(()),
-            0 | 2 | 4 => continue,
-            3 => return Err(Error::LteRegistrationDenied),
-            90 => return Err(Error::SimFailure),
-            _ => return Err(Error::UnexpectedAtResponse),
-        }
-    }
 }
