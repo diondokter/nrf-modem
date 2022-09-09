@@ -1,9 +1,7 @@
-use core::str::FromStr;
-
+use crate::{ip::NrfSockAddr, Error};
 use arrayvec::ArrayString;
-use no_std_net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
-use crate::Error;
+use core::str::FromStr;
+use no_std_net::{IpAddr, SocketAddr};
 
 pub fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
     #[cfg(feature = "defmt")]
@@ -21,7 +19,7 @@ pub fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
 
     unsafe {
         let hints = nrfxlib_sys::nrf_addrinfo {
-            ai_family: nrfxlib_sys::NRF_AF_INET6 as _,
+            ai_family: nrfxlib_sys::NRF_AF_UNSPEC as _,
             ai_socktype: nrfxlib_sys::NRF_SOCK_STREAM as _,
 
             ai_flags: 0,
@@ -46,7 +44,9 @@ pub fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
             &mut result as *mut *mut _,
         );
 
-        if err != 0 {
+        if err > 0 {
+            return Err(Error::NrfError(err));
+        } else if err == -1 {
             return Err(Error::NrfError(crate::ffi::get_last_error()));
         }
 
@@ -62,18 +62,15 @@ pub fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
             if (*address).sa_family == nrfxlib_sys::NRF_AF_INET as i32 {
                 let dns_addr: &nrfxlib_sys::nrf_sockaddr_in =
                     &*(address as *const nrfxlib_sys::nrf_sockaddr_in);
-        
-                found_ip = Some(IpAddr::V4(Ipv4Addr::from(
-                    dns_addr.sin_addr.s_addr.to_ne_bytes(),
-                )));
+
+                let socket_addr: SocketAddr = NrfSockAddr::from(*dns_addr).into();
+                found_ip = Some(socket_addr.ip());
             } else if (*address).sa_family == nrfxlib_sys::NRF_AF_INET6 as i32 {
                 let dns_addr: &nrfxlib_sys::nrf_sockaddr_in6 =
                     &*(address as *const nrfxlib_sys::nrf_sockaddr_in6);
 
-                #[cfg(feature = "defmt")]
-                defmt::debug!("{:?}", defmt::Debug2Format(dns_addr));
-    
-                found_ip = Some(IpAddr::V6(Ipv6Addr::from(dns_addr.sin6_addr.s6_addr)));
+                let socket_addr: SocketAddr = NrfSockAddr::from(*dns_addr).into();
+                found_ip = Some(socket_addr.ip());
             }
 
             result_iter = (*result_iter).ai_next;

@@ -12,9 +12,11 @@ pub mod dns;
 pub mod error;
 pub mod ffi;
 pub mod gnss;
+pub(crate) mod ip;
 pub mod lte_link;
 pub(crate) mod socket;
 pub mod tcp_stream;
+pub mod udp_socket;
 pub(crate) mod waker_node_list;
 
 pub use no_std_net;

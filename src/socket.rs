@@ -1,10 +1,11 @@
-use crate::lte_link::LteLink;
-use crate::waker_node_list::{WakerNode, WakerNodeList};
-use crate::{error::Error, ffi::get_last_error};
-use core::mem::size_of;
-use core::ops::Neg;
-use core::task::Poll;
-use core::{cell::RefCell, future::Future};
+use crate::{
+    error::Error,
+    ffi::get_last_error,
+    ip::NrfSockAddr,
+    lte_link::LteLink,
+    waker_node_list::{WakerNode, WakerNodeList},
+};
+use core::{cell::RefCell, future::Future, ops::Neg, task::Poll};
 use embassy::blocking_mutex::CriticalSectionMutex;
 use no_std_net::SocketAddr;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
@@ -15,6 +16,7 @@ pub(crate) static WAKER_NODE_LIST: CriticalSectionMutex<RefCell<WakerNodeList<()
 #[derive(Debug, PartialEq, Eq)]
 pub struct Socket {
     fd: i32,
+    family: SocketFamily,
     link: LteLink,
 }
 
@@ -59,7 +61,11 @@ impl Socket {
             }
         }
 
-        Ok(Socket { fd, link })
+        Ok(Socket { fd, family, link })
+    }
+
+    pub fn as_raw_fd(&self) -> i32 {
+        self.fd
     }
 
     pub async fn connect(&self, address: SocketAddr) -> Result<(), Error> {
@@ -82,8 +88,28 @@ impl Socket {
         Ok(())
     }
 
-    pub async fn send(&self, buffer: &[u8]) -> Result<usize, Error> {
-        SendFuture {
+    pub async fn bind(&self, address: SocketAddr) -> Result<(), Error> {
+        #[cfg(feature = "defmt")]
+        defmt::debug!(
+            "Binding socket {} to {:?}",
+            self.fd,
+            defmt::Debug2Format(&address)
+        );
+
+        self.link.wait_for_link().await?;
+
+        BindFuture {
+            fd: &self.fd,
+            address,
+            waker_node: None,
+        }
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn write(&self, buffer: &[u8]) -> Result<usize, Error> {
+        WriteFuture {
             fd: &self.fd,
             data: buffer,
             waker_node: None,
@@ -91,12 +117,33 @@ impl Socket {
         .await
     }
 
-    pub async fn receive<'buf>(&self, buffer: &'buf mut [u8]) -> Result<usize, Error> {
+    pub async fn receive(&self, buffer: &mut [u8]) -> Result<usize, Error> {
         ReceiveFuture {
             fd: &self.fd,
             data: buffer,
             waker_node: None,
-        }.await
+        }
+        .await
+    }
+
+    pub async fn receive_from(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), Error> {
+        ReceiveFromFuture {
+            fd: &self.fd,
+            family: self.family,
+            data: buffer,
+            waker_node: None,
+        }
+        .await
+    }
+
+    pub async fn send_to(&self, buffer: &[u8], address: SocketAddr) -> Result<usize, Error> {
+        SendToFuture {
+            fd: &self.fd,
+            data: buffer,
+            address,
+            waker_node: None,
+        }
+        .await
     }
 }
 
@@ -137,49 +184,10 @@ impl<'s> Future for ConnectFuture<'s> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Connecting socket {}", self.fd);
 
-        let mut connect_result = match self.address {
-            SocketAddr::V4(addr) => {
-                let nrf_addr = nrfxlib_sys::nrf_sockaddr_in {
-                    sin_len: size_of::<nrfxlib_sys::nrf_sockaddr_in>() as u8,
-                    sin_family: SocketFamily::Ipv4 as u32 as i32,
-                    sin_port: addr.port().to_be(),
-                    sin_addr: nrfxlib_sys::nrf_in_addr {
-                        s_addr: u32::to_be((*addr.ip()).into()),
-                    },
-                };
+        let address = NrfSockAddr::from(self.address);
 
-                unsafe {
-                    nrfxlib_sys::nrf_connect(
-                        *self.fd,
-                        &nrf_addr as *const nrfxlib_sys::nrf_sockaddr_in as *const _,
-                        size_of::<nrfxlib_sys::nrf_sockaddr_in>() as u32,
-                    )
-                }
-            }
-            SocketAddr::V6(addr) => {
-                let mut ip_octets = addr.ip().octets();
-                ip_octets.reverse();
-
-                let nrf_addr = nrfxlib_sys::nrf_sockaddr_in6 {
-                    sin6_len: size_of::<nrfxlib_sys::nrf_sockaddr_in6>() as u8,
-                    sin6_family: SocketFamily::Ipv6 as u32 as i32,
-                    sin6_port: addr.port().to_be(),
-                    sin6_addr: nrfxlib_sys::nrf_in6_addr {
-                        s6_addr: ip_octets,
-                    },
-                    sin6_flowinfo: addr.flowinfo(),
-                    sin6_scope_id: addr.scope_id(),
-                };
-
-                unsafe {
-                    nrfxlib_sys::nrf_connect(
-                        *self.fd,
-                        &nrf_addr as *const nrfxlib_sys::nrf_sockaddr_in6 as *const _,
-                        size_of::<nrfxlib_sys::nrf_sockaddr_in6>() as u32,
-                    )
-                }
-            }
-        };
+        let mut connect_result =
+            unsafe { nrfxlib_sys::nrf_connect(*self.fd, address.as_ptr(), address.size() as u32) };
 
         const NRF_EINPROGRESS: i32 = nrfxlib_sys::NRF_EINPROGRESS as i32;
         const NRF_EISCONN: i32 = nrfxlib_sys::NRF_EISCONN as i32;
@@ -210,13 +218,74 @@ impl<'s> Drop for ConnectFuture<'s> {
     }
 }
 
-struct SendFuture<'s, 'd> {
+struct BindFuture<'s> {
+    fd: &'s i32,
+    address: SocketAddr,
+    waker_node: Option<WakerNode<()>>,
+}
+
+impl<'s> Future for BindFuture<'s> {
+    type Output = Result<(), Error>;
+
+    fn poll(
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        // Register our waker node
+        WAKER_NODE_LIST.lock(|list| {
+            let waker_node = self
+                .waker_node
+                .get_or_insert_with(|| WakerNode::new(None, cx.waker().clone()));
+            waker_node.waker = cx.waker().clone();
+            unsafe {
+                list.borrow_mut().append_node(waker_node as *mut _);
+            }
+        });
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Binding socket {}", self.fd);
+
+        let address = NrfSockAddr::from(self.address);
+
+        let mut connect_result =
+            unsafe { nrfxlib_sys::nrf_bind(*self.fd, address.as_ptr(), address.size() as u32) };
+
+        const NRF_EINPROGRESS: i32 = nrfxlib_sys::NRF_EINPROGRESS as i32;
+        const NRF_EISCONN: i32 = nrfxlib_sys::NRF_EISCONN as i32;
+
+        if connect_result == -1 {
+            connect_result = get_last_error();
+        }
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Bind result {}", connect_result);
+
+        match connect_result {
+            0 => Poll::Ready(Ok(())),
+            NRF_EISCONN => Poll::Ready(Ok(())),
+            NRF_EINPROGRESS => Poll::Pending,
+            error => Poll::Ready(Err(Error::NrfError(error))),
+        }
+    }
+}
+
+impl<'s> Drop for BindFuture<'s> {
+    fn drop(&mut self) {
+        if let Some(waker_node) = self.waker_node.as_mut() {
+            WAKER_NODE_LIST.lock(|list| unsafe {
+                list.borrow_mut().remove_node(waker_node as *mut _);
+            });
+        }
+    }
+}
+
+struct WriteFuture<'s, 'd> {
     fd: &'s i32,
     data: &'d [u8],
     waker_node: Option<WakerNode<()>>,
 }
 
-impl<'s, 'd> Future for SendFuture<'s, 'd> {
+impl<'s, 'd> Future for WriteFuture<'s, 'd> {
     type Output = Result<usize, Error>;
 
     fn poll(
@@ -263,7 +332,7 @@ impl<'s, 'd> Future for SendFuture<'s, 'd> {
     }
 }
 
-impl<'s, 'd> Drop for SendFuture<'s, 'd> {
+impl<'s, 'd> Drop for WriteFuture<'s, 'd> {
     fn drop(&mut self) {
         if let Some(waker_node) = self.waker_node.as_mut() {
             WAKER_NODE_LIST.lock(|list| unsafe {
@@ -301,7 +370,12 @@ impl<'s, 'd> Future for ReceiveFuture<'s, 'd> {
         defmt::trace!("Receiving with socket {}", self.fd);
 
         let mut receive_result = unsafe {
-            nrfxlib_sys::nrf_recv(*self.fd, self.data.as_ptr() as *mut _, self.data.len() as u32, 0)
+            nrfxlib_sys::nrf_recv(
+                *self.fd,
+                self.data.as_ptr() as *mut _,
+                self.data.len() as u32,
+                0,
+            )
         };
 
         if receive_result == -1 {
@@ -322,6 +396,148 @@ impl<'s, 'd> Future for ReceiveFuture<'s, 'd> {
 }
 
 impl<'s, 'd> Drop for ReceiveFuture<'s, 'd> {
+    fn drop(&mut self) {
+        if let Some(waker_node) = self.waker_node.as_mut() {
+            WAKER_NODE_LIST.lock(|list| unsafe {
+                list.borrow_mut().remove_node(waker_node as *mut _);
+            });
+        }
+    }
+}
+
+struct ReceiveFromFuture<'s, 'd> {
+    fd: &'s i32,
+    family: SocketFamily,
+    data: &'d mut [u8],
+    waker_node: Option<WakerNode<()>>,
+}
+
+impl<'s, 'd> Future for ReceiveFromFuture<'s, 'd> {
+    type Output = Result<(usize, SocketAddr), Error>;
+
+    fn poll(
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        // Register our waker node
+        WAKER_NODE_LIST.lock(|list| {
+            let waker_node = self
+                .waker_node
+                .get_or_insert_with(|| WakerNode::new(None, cx.waker().clone()));
+            waker_node.waker = cx.waker().clone();
+            unsafe {
+                list.borrow_mut().append_node(waker_node as *mut _);
+            }
+        });
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Receiving with socket {}", self.fd);
+
+        // Big enough to store both ipv4 and ipv6
+        let mut socket_addr_store = [0u8; core::mem::size_of::<nrfxlib_sys::nrf_sockaddr_in6>()];
+        let socket_addr_ptr = socket_addr_store.as_mut_ptr() as *mut nrfxlib_sys::nrf_sockaddr;
+        let mut socket_addr_len = 0u32;
+
+        let mut receive_result = unsafe {
+            nrfxlib_sys::nrf_recvfrom(
+                *self.fd,
+                self.data.as_ptr() as *mut _,
+                self.data.len() as u32,
+                0,
+                socket_addr_ptr,
+                &mut socket_addr_len as *mut u32,
+            )
+        };
+
+        if receive_result == -1 {
+            receive_result = get_last_error().abs().neg();
+        }
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Receive result {}", receive_result);
+
+        const NRF_EWOULDBLOCK: i32 = -(nrfxlib_sys::NRF_EWOULDBLOCK as i32);
+
+        match receive_result {
+            bytes_received @ 0.. => Poll::Ready(Ok((bytes_received as usize, {
+                unsafe { (*socket_addr_ptr).sa_family = self.family as u32 as i32 }
+                NrfSockAddr::from(socket_addr_ptr as *const _).into()
+            }))),
+            NRF_EWOULDBLOCK => Poll::Pending,
+            error => Poll::Ready(Err(Error::NrfError(error))),
+        }
+    }
+}
+
+impl<'s, 'd> Drop for ReceiveFromFuture<'s, 'd> {
+    fn drop(&mut self) {
+        if let Some(waker_node) = self.waker_node.as_mut() {
+            WAKER_NODE_LIST.lock(|list| unsafe {
+                list.borrow_mut().remove_node(waker_node as *mut _);
+            });
+        }
+    }
+}
+
+struct SendToFuture<'s, 'd> {
+    fd: &'s i32,
+    data: &'d [u8],
+    address: SocketAddr,
+    waker_node: Option<WakerNode<()>>,
+}
+
+impl<'s, 'd> Future for SendToFuture<'s, 'd> {
+    type Output = Result<usize, Error>;
+
+    fn poll(
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        // Register our waker node
+        WAKER_NODE_LIST.lock(|list| {
+            let waker_node = self
+                .waker_node
+                .get_or_insert_with(|| WakerNode::new(None, cx.waker().clone()));
+            waker_node.waker = cx.waker().clone();
+            unsafe {
+                list.borrow_mut().append_node(waker_node as *mut _);
+            }
+        });
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Sending with socket {}", self.fd);
+
+        let addr = NrfSockAddr::from(self.address);
+
+        let mut send_result = unsafe {
+            nrfxlib_sys::nrf_sendto(
+                *self.fd,
+                self.data.as_ptr() as *mut _,
+                self.data.len() as u32,
+                0,
+                addr.as_ptr(),
+                addr.size() as u32,
+            )
+        };
+
+        if send_result == -1 {
+            send_result = get_last_error().abs().neg();
+        }
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Sending result {}", send_result);
+
+        const NRF_EWOULDBLOCK: i32 = -(nrfxlib_sys::NRF_EWOULDBLOCK as i32);
+
+        match send_result {
+            bytes_received @ 0.. => Poll::Ready(Ok(bytes_received as usize)),
+            NRF_EWOULDBLOCK => Poll::Pending,
+            error => Poll::Ready(Err(Error::NrfError(error))),
+        }
+    }
+}
+
+impl<'s, 'd> Drop for SendToFuture<'s, 'd> {
     fn drop(&mut self) {
         if let Some(waker_node) = self.waker_node.as_mut() {
             WAKER_NODE_LIST.lock(|list| unsafe {

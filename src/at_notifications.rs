@@ -1,5 +1,7 @@
-use crate::error::{Error, ErrorSource};
-use crate::waker_node_list::{WakerNode, WakerNodeList};
+use crate::{
+    error::{Error, ErrorSource},
+    waker_node_list::{WakerNode, WakerNodeList},
+};
 use arrayvec::ArrayString;
 use core::{cell::RefCell, future::Future, task::Poll};
 use embassy::blocking_mutex::CriticalSectionMutex;

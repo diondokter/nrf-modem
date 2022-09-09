@@ -63,9 +63,42 @@ impl TcpStream {
         Err(last_error.take().unwrap())
     }
 
+    pub fn as_raw_fd(&self) -> i32 {
+        self.inner.as_raw_fd()
+    }
+
+    pub fn split(&self) -> (TcpReadStream<'_>, TcpWriteStream<'_>) {
+        (
+            TcpReadStream { stream: self },
+            TcpWriteStream { stream: self },
+        )
+    }
+
+    pub async fn receive<'buf>(&self, buf: &'buf mut [u8]) -> Result<&'buf mut [u8], Error> {
+        self.split().0.receive(buf).await
+    }
+
+    pub async fn receive_exact(&self, buf: &mut [u8]) -> Result<(), Error> {
+        self.split().0.receive_exact(buf).await
+    }
+
+    pub async fn write(&self, buf: &[u8]) -> Result<(), Error> {
+        self.split().1.write(buf).await
+    }
+}
+
+pub struct TcpReadStream<'a> {
+    stream: &'a TcpStream,
+}
+
+impl<'a> TcpReadStream<'a> {
     pub async fn receive<'buf>(&self, buf: &'buf mut [u8]) -> Result<&'buf mut [u8], Error> {
         let max_receive_len = 1024.min(buf.len());
-        let received_bytes = self.inner.receive(&mut buf[..max_receive_len]).await?;
+        let received_bytes = self
+            .stream
+            .inner
+            .receive(&mut buf[..max_receive_len])
+            .await?;
         Ok(&mut buf[..received_bytes])
     }
 
@@ -78,14 +111,24 @@ impl TcpStream {
 
         Ok(())
     }
+}
 
-    pub async fn send(&self, buf: &[u8]) -> Result<(), Error> {
-        let mut sent_bytes = 0;
-        
-        while sent_bytes < buf.len() {
-            // We can't send very huge chunks because then the socket can't process it all at once
-            let max_send_len = 1024.min(buf.len() - sent_bytes);
-            sent_bytes += self.inner.send(&buf[sent_bytes..][..max_send_len]).await?;   
+pub struct TcpWriteStream<'a> {
+    stream: &'a TcpStream,
+}
+
+impl<'a> TcpWriteStream<'a> {
+    pub async fn write(&self, buf: &[u8]) -> Result<(), Error> {
+        let mut written_bytes = 0;
+
+        while written_bytes < buf.len() {
+            // We can't write very huge chunks because then the socket can't process it all at once
+            let max_write_len = 1024.min(buf.len() - written_bytes);
+            written_bytes += self
+                .stream
+                .inner
+                .write(&buf[written_bytes..][..max_write_len])
+                .await?;
         }
 
         Ok(())

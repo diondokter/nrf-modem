@@ -9,6 +9,13 @@ static ACTIVE_LINKS: AtomicU32 = AtomicU32::new(0);
 #[derive(Debug, PartialEq, Eq)]
 pub struct LteLink(());
 
+impl Clone for LteLink {
+    fn clone(&self) -> Self {
+        ACTIVE_LINKS.fetch_add(1, Ordering::SeqCst);
+        Self(())
+    }
+}
+
 impl LteLink {
     pub async fn new() -> Result<Self, Error> {
         if ACTIVE_LINKS.fetch_add(1, Ordering::SeqCst) == 0 {
