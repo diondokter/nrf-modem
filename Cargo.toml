@@ -17,7 +17,6 @@ nrf9160-pac = "0.11.0"
 arrayvec = { version = "0.7", default-features = false }
 at-commands = "0.5.2"
 no-std-net = "0.6.0"
-embedded-io = { version = "0.3", features = ["async"] }
 critical-section = "1.1"
 
 [features]

@@ -77,7 +77,7 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
     }
 
     // Tell nrf_modem what memory it can use.
-    let params = nrfxlib_sys::nrf_modem_init_params_t {
+    let params = nrfxlib_sys::nrf_modem_init_params {
         shmem: nrfxlib_sys::nrf_modem_shmem_cfg {
             ctrl: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_1 {
                 // At start of shared memory (see memory.x)
@@ -115,7 +115,7 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
     }
 
     // OK, let's start the library
-    unsafe { nrfxlib_sys::nrf_modem_init(&params, nrfxlib_sys::nrf_modem_mode_t_NORMAL_MODE) }
+    unsafe { nrfxlib_sys::nrf_modem_init(&params, nrfxlib_sys::nrf_modem_mode_NORMAL_MODE) }
         .into_result()?;
 
     // Initialize AT notifications
@@ -165,14 +165,6 @@ pub fn application_irq_handler() {
                 .borrow_ref_mut(cs)
                 .wake_all(|_| {})
         });
-    }
-}
-
-/// must call this when an EGU2 interrupt occurs.
-pub fn trace_irq_handler() {
-    unsafe {
-        nrfxlib_sys::nrf_modem_trace_irq_handler();
-        nrfxlib_sys::nrf_modem_os_event_notify();
     }
 }
 

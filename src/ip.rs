@@ -13,7 +13,7 @@ impl From<SocketAddr> for NrfSockAddr {
         match addr {
             SocketAddr::V4(addr) => nrf_sockaddr_in {
                 sin_len: size_of::<nrf_sockaddr_in>() as u8,
-                sin_family: SocketFamily::Ipv4 as u32 as i32,
+                sin_family: SocketFamily::Ipv4 as u32,
                 sin_port: addr.port().to_be(),
                 sin_addr: nrfxlib_sys::nrf_in_addr {
                     s_addr: u32::to_be((*addr.ip()).into()),
@@ -22,7 +22,7 @@ impl From<SocketAddr> for NrfSockAddr {
             .into(),
             SocketAddr::V6(addr) => nrf_sockaddr_in6 {
                 sin6_len: size_of::<nrf_sockaddr_in6>() as u8,
-                sin6_family: SocketFamily::Ipv6 as u32 as i32,
+                sin6_family: SocketFamily::Ipv6 as u32,
                 sin6_port: addr.port().to_be(),
                 sin6_addr: nrfxlib_sys::nrf_in6_addr {
                     s6_addr: addr.ip().octets(),

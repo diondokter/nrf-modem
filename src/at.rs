@@ -9,24 +9,40 @@ use core::{
 use critical_section::Mutex;
 use futures::task::AtomicWaker;
 
+// AT commands usually get a quick response, so there's only one active waiter at a time.
+// If two futures wait, then they will get bumped out and reregister.
+// This fighting only happens for a bit
+
+/// Set to false if there's no at command in progress.
+/// There can only be one in progress at a time.
 static AT_PROGRESS: AtomicBool = AtomicBool::new(false);
+/// This waker gets called when the [AT_PROGRESS] is set to false.
+/// This can be used by a future to await being able to send a command.
 static AT_PROGRESS_WAKER: AtomicWaker = AtomicWaker::new();
 
+/// The from the callback is stored in this variable
 static AT_DATA: Mutex<RefCell<ArrayString<256>>> =
     Mutex::new(RefCell::new(ArrayString::new_const()));
+/// When the [AT_DATA] is updated, this waker is called so a future can be woken up.
 static AT_DATA_WAKER: AtomicWaker = AtomicWaker::new();
 
+/// The callback that will be called by nrfxlib when the at command has a response.
+/// The `resp` is a null-terminated string.
 unsafe extern "C" fn at_callback(resp: *const u8) {
+    // Let's be lazy and let Rust figure out how to convert the pointer to a string
     let cstring = core::ffi::CStr::from_ptr(resp as _);
+    // We can unwrap this because the response is always an ascii string
     let string = cstring.to_str().unwrap();
 
     #[cfg(feature = "defmt")]
     defmt::trace!("AT <- {}", string);
 
+    // Store the data and wake the future that waits for it
     critical_section::with(|cs| AT_DATA.borrow_ref_mut(cs).push_str(string));
     AT_DATA_WAKER.wake();
 }
 
+/// Send an AT command to the modem
 pub async fn send_at(command: &str) -> Result<ArrayString<256>, Error> {
     SendATFuture {
         state: Default::default(),
