@@ -6,15 +6,13 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
     task::Poll,
 };
-use embassy::{
-    blocking_mutex::{raw::CriticalSectionRawMutex, Mutex},
-    waitqueue::AtomicWaker,
-};
+use critical_section::Mutex;
+use futures::task::AtomicWaker;
 
 static AT_PROGRESS: AtomicBool = AtomicBool::new(false);
 static AT_PROGRESS_WAKER: AtomicWaker = AtomicWaker::new();
 
-static AT_DATA: Mutex<CriticalSectionRawMutex, RefCell<ArrayString<256>>> =
+static AT_DATA: Mutex<RefCell<ArrayString<256>>> =
     Mutex::new(RefCell::new(ArrayString::new_const()));
 static AT_DATA_WAKER: AtomicWaker = AtomicWaker::new();
 
@@ -25,7 +23,7 @@ unsafe extern "C" fn at_callback(resp: *const u8) {
     #[cfg(feature = "defmt")]
     defmt::trace!("AT <- {}", string);
 
-    AT_DATA.lock(|data| data.borrow_mut().push_str(string));
+    critical_section::with(|cs| AT_DATA.borrow_ref_mut(cs).push_str(string));
     AT_DATA_WAKER.wake();
 }
 
@@ -94,7 +92,7 @@ impl<'c> Future for SendATFuture<'c> {
             }
             SendATState::AccessGranted => {
                 // Clear any old data
-                AT_DATA.lock(|data| data.borrow_mut().clear());
+                critical_section::with(|cs| AT_DATA.borrow_ref_mut(cs).clear());
                 AT_DATA_WAKER.register(cx.waker());
 
                 #[cfg(feature = "defmt")]
@@ -121,8 +119,9 @@ impl<'c> Future for SendATFuture<'c> {
                     Err(e) => Poll::Ready(Err(e)),
                 }
             }
-            SendATState::WaitingOnData => {
-                match AT_DATA.lock(|data| (!data.borrow().is_empty()).then(|| *data.borrow())) {
+            SendATState::WaitingOnData => critical_section::with(|cs| {
+                let data = AT_DATA.borrow_ref_mut(cs);
+                match (!data.is_empty()).then(|| *data) {
                     Some(data) => {
                         AT_PROGRESS.store(false, Ordering::SeqCst);
                         AT_PROGRESS_WAKER.wake();
@@ -133,7 +132,7 @@ impl<'c> Future for SendATFuture<'c> {
                         Poll::Pending
                     }
                 }
-            }
+            }),
         }
     }
 }

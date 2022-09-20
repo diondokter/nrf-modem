@@ -160,7 +160,11 @@ pub fn application_irq_handler() {
         nrfxlib_sys::nrf_modem_application_irq_handler();
         nrfxlib_sys::nrf_modem_os_event_notify();
         // Wake up all the waiting sockets
-        crate::socket::WAKER_NODE_LIST.lock(|list| list.borrow_mut().wake_all(|_| {}))
+        critical_section::with(|cs| {
+            crate::socket::WAKER_NODE_LIST
+                .borrow_ref_mut(cs)
+                .wake_all(|_| {})
+        });
     }
 }
 

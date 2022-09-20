@@ -4,14 +4,16 @@ use crate::{
 };
 use arrayvec::ArrayString;
 use core::{cell::RefCell, future::Future, task::Poll};
-use embassy::blocking_mutex::CriticalSectionMutex;
+use critical_section::Mutex;
 
-static WAKER_NODE_LIST: CriticalSectionMutex<RefCell<WakerNodeList<dyn NotificationBuffer>>> =
-    CriticalSectionMutex::new(RefCell::new(WakerNodeList::new()));
+static WAKER_NODE_LIST: Mutex<RefCell<WakerNodeList<dyn NotificationBuffer>>> =
+    Mutex::new(RefCell::new(WakerNodeList::new()));
 
 unsafe extern "C" fn at_notification_handler(notif: *const u8) {
-    WAKER_NODE_LIST.lock(|list| {
-        list.borrow_mut().wake_all(|c| c.write(notif));
+    critical_section::with(|cs| {
+        WAKER_NODE_LIST
+            .borrow_ref_mut(cs)
+            .wake_all(|c| c.write(notif))
     });
 }
 
@@ -42,16 +44,15 @@ impl<const CAP: usize> Future for AtNotificationFuture<CAP> {
         mut self: core::pin::Pin<&mut Self>,
         cx: &mut core::task::Context<'_>,
     ) -> Poll<Self::Output> {
-        WAKER_NODE_LIST.lock(|list| {
+        critical_section::with(|cs| {
+            let mut list = WAKER_NODE_LIST.borrow_ref_mut(cs);
+
             // Are we done?
             if !self.buffer.is_empty() {
                 // Yes.
                 // We must make sure our list doesn't contain pointers to our node anymore
                 if let Some(waker_node) = self.waker_node.as_mut() {
-                    unsafe {
-                        list.borrow_mut()
-                            .remove_node(waker_node as *mut WakerNode<_>)
-                    };
+                    unsafe { list.remove_node(waker_node as *mut WakerNode<_>) };
                     self.waker_node = None;
                 }
                 return Poll::Ready(self.buffer);
@@ -62,7 +63,7 @@ impl<const CAP: usize> Future for AtNotificationFuture<CAP> {
                 .waker_node
                 .get_or_insert_with(|| WakerNode::new(Some(buffer_ptr), cx.waker().clone()));
 
-            unsafe { list.borrow_mut().append_node(waker_node as *mut _) };
+            unsafe { list.append_node(waker_node as *mut _) };
 
             Poll::Pending
         })
@@ -72,8 +73,11 @@ impl<const CAP: usize> Future for AtNotificationFuture<CAP> {
 impl<const CAP: usize> Drop for AtNotificationFuture<CAP> {
     fn drop(&mut self) {
         if let Some(waker_node) = self.waker_node.as_mut() {
-            WAKER_NODE_LIST
-                .lock(|list| unsafe { list.borrow_mut().remove_node(waker_node as *mut _) });
+            critical_section::with(|cs| unsafe {
+                WAKER_NODE_LIST
+                    .borrow_ref_mut(cs)
+                    .remove_node(waker_node as *mut _)
+            });
         }
     }
 }

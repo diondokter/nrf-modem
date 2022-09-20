@@ -8,17 +8,16 @@ use core::{
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
     task::{Context, Poll},
 };
-use embassy::{blocking_mutex::CriticalSectionMutex, waitqueue::AtomicWaker};
-use futures::Stream;
+use critical_section::Mutex;
+use futures::{task::AtomicWaker, Stream};
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
 const MAX_NMEA_BURST_SIZE: usize = 5;
 
 static GNSS_WAKER: AtomicWaker = AtomicWaker::new();
 static GNSS_NOTICED_EVENTS: AtomicU32 = AtomicU32::new(0);
-static GNSS_NMEA_STRINGS: CriticalSectionMutex<
-    RefCell<ArrayVec<Result<GnssData, Error>, MAX_NMEA_BURST_SIZE>>,
-> = CriticalSectionMutex::new(RefCell::new(ArrayVec::new_const()));
+static GNSS_NMEA_STRINGS: Mutex<RefCell<ArrayVec<Result<GnssData, Error>, MAX_NMEA_BURST_SIZE>>> =
+    Mutex::new(RefCell::new(ArrayVec::new_const()));
 static GNSS_TAKEN: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "C" fn gnss_callback(event: i32) {
@@ -28,12 +27,12 @@ unsafe extern "C" fn gnss_callback(event: i32) {
     defmt::trace!("Gnss -> {}", event_type);
 
     if matches!(event_type, GnssEventType::Nmea) {
-        GNSS_NMEA_STRINGS.lock(|strings| {
-            strings
-                .borrow_mut()
+        critical_section::with(|cs| {
+            GNSS_NMEA_STRINGS
+                .borrow_ref_mut(cs)
                 .try_push(GnssData::read_from_modem(GnssDataType::Nmea))
-                .ok();
-        })
+                .ok()
+        });
     }
 
     GNSS_NOTICED_EVENTS.fetch_or(1 << event as u32, Ordering::SeqCst);
@@ -512,9 +511,10 @@ impl<'g> Stream for GnssDataIter<'g> {
             GnssEventType::GnssFix => Some(GnssData::read_from_modem(
                 GnssDataType::PositionVelocityTime,
             )),
-            GnssEventType::Nmea => GNSS_NMEA_STRINGS.lock(|strings| {
-                left_over_nmea_strings = strings.borrow_mut().len() > 1;
-                strings.borrow_mut().pop_at(0)
+            GnssEventType::Nmea => critical_section::with(|cs| {
+                let mut strings = GNSS_NMEA_STRINGS.borrow_ref_mut(cs);
+                left_over_nmea_strings = strings.len() > 1;
+                strings.pop_at(0)
             }),
             GnssEventType::AgpsRequest => Some(GnssData::read_from_modem(GnssDataType::Agps)),
             GnssEventType::RetryTimeoutReached | GnssEventType::SleepAfterFix

@@ -6,12 +6,12 @@ use crate::{
     waker_node_list::{WakerNode, WakerNodeList},
 };
 use core::{cell::RefCell, future::Future, marker::PhantomData, ops::Neg, task::Poll};
-use embassy::blocking_mutex::CriticalSectionMutex;
+use critical_section::Mutex;
 use no_std_net::SocketAddr;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-pub(crate) static WAKER_NODE_LIST: CriticalSectionMutex<RefCell<WakerNodeList<()>>> =
-    CriticalSectionMutex::new(RefCell::new(WakerNodeList::new()));
+pub(crate) static WAKER_NODE_LIST: Mutex<RefCell<WakerNodeList<()>>> =
+    Mutex::new(RefCell::new(WakerNodeList::new()));
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Socket {
@@ -331,13 +331,14 @@ where
         cx: &mut core::task::Context<'_>,
     ) -> Poll<Self::Output> {
         // Register our waker node
-        WAKER_NODE_LIST.lock(|list| {
+        critical_section::with(|cs| {
+            let mut list = WAKER_NODE_LIST.borrow_ref_mut(cs);
             let waker_node = self
                 .waker_node
                 .get_or_insert_with(|| WakerNode::new(None, cx.waker().clone()));
             waker_node.waker = cx.waker().clone();
             unsafe {
-                list.borrow_mut().append_node(waker_node as *mut _);
+                list.append_node(waker_node as *mut _);
             }
         });
 
@@ -352,8 +353,10 @@ where
 {
     fn drop(&mut self) {
         if let Some(waker_node) = self.waker_node.as_mut() {
-            WAKER_NODE_LIST.lock(|list| unsafe {
-                list.borrow_mut().remove_node(waker_node as *mut _);
+            critical_section::with(|cs| unsafe {
+                WAKER_NODE_LIST
+                    .borrow_ref_mut(cs)
+                    .remove_node(waker_node as *mut _)
             });
         }
     }
