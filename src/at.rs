@@ -46,7 +46,8 @@ pub fn send_at_blocking(command: &str) -> Result<ArrayString<256>, Error> {
         nrfxlib_sys::nrf_modem_at_cmd(
             buffer.as_mut_ptr() as _,
             256,
-            b"%s\0".as_ptr(),
+            b"%.*s\0".as_ptr(),
+            command.len(),
             command.as_ptr(),
         )
         .into_result()?;
@@ -102,42 +103,15 @@ impl<'c> Future for SendATFuture<'c> {
                     defmt::unwrap!(core::str::from_utf8(self.command).ok())
                 );
 
-                // TODO: I don't like this allocation here. We need to put a null character after the command and that takes extra space
-                let (command, allocated) = if self.command.ends_with(&[0]) {
-                    (self.command.as_ptr(), false)
-                } else {
-                    unsafe {
-                        match nrfxlib_sys::nrf_modem_os_alloc((self.command.len() + 1) as u32) {
-                            allocation if !allocation.is_null() => {
-                                allocation.copy_from_nonoverlapping(
-                                    self.command.as_ptr() as *const _,
-                                    self.command.len(),
-                                );
-                                let allocation = allocation as *mut u8;
-                                *allocation.add(self.command.len()) = 0;
-                                (allocation as *const _, true)
-                            }
-                            _ => {
-                                return Poll::Ready(Err(Error::OutOfMemory));
-                            }
-                        }
-                    }
-                };
-
                 let result = unsafe {
                     nrfxlib_sys::nrf_modem_at_cmd_async(
                         Some(at_callback),
-                        b"%s\0".as_ptr(),
-                        command,
+                        b"%.*s\0".as_ptr(),
+                        self.command.len(),
+                        self.command.as_ptr(),
                     )
                     .into_result()
                 };
-
-                if allocated {
-                    unsafe {
-                        nrfxlib_sys::nrf_modem_os_free(command as *mut _);
-                    }
-                }
 
                 match result {
                     Ok(_) => {
