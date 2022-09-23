@@ -37,45 +37,42 @@ impl LteLink {
     }
 
     pub async fn wait_for_link(&self) -> Result<(), Error> {
-        at::send_at("AT+CEREG=1").await?;
+        use futures::StreamExt;
 
-        let current_cereg = at::send_at("AT+CEREG?").await?;
-        match Self::get_cereg_stat_control_flow(Self::parse_cereg(current_cereg.as_str())) {
-            ControlFlow::Continue(_) => {}
-            ControlFlow::Break(v) => return v,
-        }
+        let notification_waiter = at_notifications::get_stream::<256, 4>()
+            .filter_map(|notif| async move {
+                match Self::get_cereg_stat_control_flow(Self::parse_cereg(notif.as_str())) {
+                    ControlFlow::Continue(_) => None,
+                    ControlFlow::Break(v) => Some(v),
+                }
+            })
+            .take(1)
+            .fold(Ok(()), |_, res| async { res });
 
-        loop {
-            // TODO: This can miss a notification
-            let notif = at_notifications::wait_for_at_notification::<256>().await;
-
-            #[cfg(feature = "defmt")]
-            defmt::debug!("Wait for link notification: {}", notif.as_str());
-
-            match Self::get_cereg_stat_control_flow(Self::parse_cereg_notif(notif.as_str())) {
-                ControlFlow::Continue(_) => continue,
-                ControlFlow::Break(v) => break v,
-            }
-        }
+        futures::join!(
+            at::send_at("AT+CEREG=1"),
+            at::send_at_notif("AT+CEREG?"),
+            notification_waiter
+        ).2
     }
 
     fn parse_cereg(string: &str) -> Result<i32, Error> {
-        at_commands::parser::CommandParser::parse(string.as_bytes())
+        let cereg = at_commands::parser::CommandParser::parse(string.as_bytes())
             .expect_identifier(b"+CEREG:")
             .expect_int_parameter()
             .expect_int_parameter()
+            .expect_identifier(b"\r\nOK\r\n")
             .finish()
-            .map(|(_, stat)| stat)
-            .map_err(|e| e.into())
-    }
+            .map(|(_, stat)| stat);
 
-    fn parse_cereg_notif(string: &str) -> Result<i32, Error> {
-        at_commands::parser::CommandParser::parse(string.as_bytes())
+        cereg.or_else(|_| {
+            at_commands::parser::CommandParser::parse(string.as_bytes())
             .expect_identifier(b"+CEREG:")
             .expect_int_parameter()
+            .expect_identifier(b"\r\n")
             .finish()
             .map(|(stat,)| stat)
-            .map_err(|e| e.into())
+        }).map_err(|e| e.into())
     }
 
     fn get_cereg_stat_control_flow(stat: Result<i32, Error>) -> ControlFlow<Result<(), Error>, ()> {

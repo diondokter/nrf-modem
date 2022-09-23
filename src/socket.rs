@@ -89,6 +89,7 @@ impl Socket {
             };
 
             const NRF_EINPROGRESS: i32 = nrfxlib_sys::NRF_EINPROGRESS as i32;
+            const NRF_EALREADY: i32 = nrfxlib_sys::NRF_EALREADY as i32;
             const NRF_EISCONN: i32 = nrfxlib_sys::NRF_EISCONN as i32;
 
             if connect_result == -1 {
@@ -101,7 +102,7 @@ impl Socket {
             match connect_result {
                 0 => Poll::Ready(Ok(())),
                 NRF_EISCONN => Poll::Ready(Ok(())),
-                NRF_EINPROGRESS => Poll::Pending,
+                NRF_EINPROGRESS | NRF_EALREADY => Poll::Pending,
                 error => Poll::Ready(Err(Error::NrfError(error))),
             }
         })
@@ -130,6 +131,7 @@ impl Socket {
                 unsafe { nrfxlib_sys::nrf_bind(self.fd, address.as_ptr(), address.size() as u32) };
 
             const NRF_EINPROGRESS: i32 = nrfxlib_sys::NRF_EINPROGRESS as i32;
+            const NRF_EALREADY: i32 = nrfxlib_sys::NRF_EALREADY as i32;
             const NRF_EISCONN: i32 = nrfxlib_sys::NRF_EISCONN as i32;
 
             if bind_result == -1 {
@@ -142,7 +144,7 @@ impl Socket {
             match bind_result {
                 0 => Poll::Ready(Ok(())),
                 NRF_EISCONN => Poll::Ready(Ok(())),
-                NRF_EINPROGRESS => Poll::Pending,
+                NRF_EINPROGRESS | NRF_EALREADY => Poll::Pending,
                 error => Poll::Ready(Err(Error::NrfError(error))),
             }
         })

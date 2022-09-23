@@ -163,7 +163,7 @@ pub fn application_irq_handler() {
         critical_section::with(|cs| {
             crate::socket::WAKER_NODE_LIST
                 .borrow_ref_mut(cs)
-                .wake_all(|_| {})
+                .wake_all_and_reset(|_| {})
         });
     }
 }

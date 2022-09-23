@@ -1,4 +1,6 @@
-use crate::error::{Error, ErrorSource};
+//! Implementation of AT functionality
+
+use crate::{error::{Error, ErrorSource}, at_notifications};
 use arrayvec::ArrayString;
 use core::{
     cell::RefCell,
@@ -47,8 +49,21 @@ pub async fn send_at(command: &str) -> Result<ArrayString<256>, Error> {
     SendATFuture {
         state: Default::default(),
         command: command.as_bytes(),
+        publish: false,
     }
     .await
+}
+
+/// Send an AT command to the modem and publish the response as a notification
+pub async fn send_at_notif(command: &str) -> Result<(), Error> {
+    SendATFuture {
+        state: Default::default(),
+        command: command.as_bytes(),
+        publish: true,
+    }
+    .await?;
+
+    Ok(())
 }
 
 pub fn send_at_blocking(command: &str) -> Result<ArrayString<256>, Error> {
@@ -77,6 +92,7 @@ pub async fn send_at_bytes(command: &[u8]) -> Result<ArrayString<256>, Error> {
     SendATFuture {
         state: Default::default(),
         command,
+        publish: false,
     }
     .await
 }
@@ -84,6 +100,7 @@ pub async fn send_at_bytes(command: &[u8]) -> Result<ArrayString<256>, Error> {
 struct SendATFuture<'c> {
     state: SendATState,
     command: &'c [u8],
+    publish: bool,
 }
 
 impl<'c> Future for SendATFuture<'c> {
@@ -141,6 +158,13 @@ impl<'c> Future for SendATFuture<'c> {
                     Some(data) => {
                         AT_PROGRESS.store(false, Ordering::SeqCst);
                         AT_PROGRESS_WAKER.wake();
+
+                        if self.publish {
+                            unsafe {
+                                at_notifications::at_notification_handler(data.as_bytes().as_ptr())
+                            }
+                        }
+
                         Poll::Ready(Ok(data))
                     }
                     None => {

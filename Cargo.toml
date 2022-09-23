@@ -8,7 +8,7 @@ rust-version = "1.62"
 
 [dependencies]
 nrfxlib-sys = { git = "https://github.com/diondokter/nrfxlib-sys.git", rev = "c80b61a" }
-futures = { version = "0.3.21", default-features = false }
+futures = { version = "0.3.21", default-features = false, features = ["async-await"] }
 num_enum = { version = "0.5.7", default-features = false }
 defmt = { version = "0.3.2", optional = true }
 cortex-m = "0.7"
@@ -18,6 +18,7 @@ arrayvec = { version = "0.7", default-features = false }
 at-commands = "0.5.2"
 no-std-net = "0.6.0"
 critical-section = "1.1"
+embedded-io = { version = "0.3.0", features = ["async"] }
 
 [features]
 default = []
