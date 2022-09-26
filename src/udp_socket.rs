@@ -84,6 +84,9 @@ impl UdpSocket {
     pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> Result<(), Error> {
         self.split().1.send_to(buf, addr).await
     }
+    pub async fn send(&self, buf: &[u8]) -> Result<(), Error> {
+        self.split().1.send(buf).await
+    }
 }
 
 pub struct UdpReceiveSocket<'a> {
@@ -107,5 +110,8 @@ pub struct UdpSendSocket<'a> {
 impl<'a> UdpSendSocket<'a> {
     pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> Result<(), Error> {
         self.socket.inner.send_to(buf, addr).await.map(|_| ())
+    }
+    pub async fn send(&self, buf: &[u8]) -> Result<(), Error> {
+        self.socket.inner.send(buf).await.map(|_| ())
     }
 }

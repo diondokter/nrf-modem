@@ -285,6 +285,51 @@ impl Socket {
         })
         .await
     }
+    pub async fn send(&self, buffer: &[u8]) -> Result<usize, Error> {
+        SocketFuture::new(|| {
+            #[cfg(feature = "defmt")]
+            defmt::trace!("Sending with socket {}", self.fd);
+
+            let mut send_result = unsafe {
+                nrfxlib_sys::nrf_send(self.fd, buffer.as_ptr() as *mut _, buffer.len() as u32, 0)
+            };
+
+            if send_result == -1 {
+                send_result = get_last_error().abs().neg();
+            }
+
+            #[cfg(feature = "defmt")]
+            defmt::trace!("Sending result {}", send_result);
+
+            const NRF_EWOULDBLOCK: i32 = -(nrfxlib_sys::NRF_EWOULDBLOCK as i32);
+
+            match send_result {
+                bytes_received @ 0.. => Poll::Ready(Ok(bytes_received as usize)),
+                NRF_EWOULDBLOCK => Poll::Pending,
+                error => Poll::Ready(Err(Error::NrfError(error))),
+            }
+        })
+        .await
+    }
+    pub fn set_option<'a>(&'a self, option: SocketOption<'a>) -> Result<(), Error> {
+        let length = option.get_length();
+
+        let result = unsafe {
+            nrfxlib_sys::nrf_setsockopt(
+                self.fd,
+                nrfxlib_sys::NRF_SOL_SECURE.try_into().unwrap(),
+                option.get_name(),
+                option.get_value(),
+                length as u32,
+            )
+        };
+
+        if result < 0 {
+            Err(Error::AddressNotFound)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl Drop for Socket {
@@ -392,4 +437,40 @@ pub enum SocketProtocol {
     All = nrfxlib_sys::NRF_IPPROTO_ALL,
     Tls1v2 = nrfxlib_sys::NRF_SPROTO_TLS1v2,
     DTls1v2 = nrfxlib_sys::NRF_SPROTO_DTLS1v2,
+}
+
+#[derive(Debug)]
+pub enum SocketOption<'a> {
+    TlsHostName(&'a str),
+    TlsPeerVerify(nrfxlib_sys::nrf_sec_peer_verify_t),
+    TlsSessionCache(nrfxlib_sys::nrf_sec_session_cache_t),
+    TlsTagList(&'a [nrfxlib_sys::nrf_sec_tag_t]),
+}
+impl<'a> SocketOption<'a> {
+    pub(crate) fn get_name(&self) -> i32 {
+        match self {
+            SocketOption::TlsHostName(_) => nrfxlib_sys::NRF_SO_SEC_HOSTNAME as i32,
+            SocketOption::TlsPeerVerify(_) => nrfxlib_sys::NRF_SO_SEC_PEER_VERIFY as i32,
+            SocketOption::TlsSessionCache(_) => nrfxlib_sys::NRF_SO_SEC_SESSION_CACHE as i32,
+            SocketOption::TlsTagList(_) => nrfxlib_sys::NRF_SO_SEC_TAG_LIST as i32,
+        }
+    }
+
+    pub(crate) fn get_value(&self) -> *const nrfxlib_sys::ctypes::c_void {
+        match self {
+            SocketOption::TlsHostName(s) => s.as_ptr() as *const nrfxlib_sys::ctypes::c_void,
+            SocketOption::TlsPeerVerify(x) => x as *const _ as *const nrfxlib_sys::ctypes::c_void,
+            SocketOption::TlsSessionCache(x) => x as *const _ as *const nrfxlib_sys::ctypes::c_void,
+            SocketOption::TlsTagList(x) => x.as_ptr() as *const nrfxlib_sys::ctypes::c_void,
+        }
+    }
+
+    pub(crate) fn get_length(&self) -> u32 {
+        match self {
+            SocketOption::TlsHostName(s) => s.len() as u32,
+            SocketOption::TlsPeerVerify(x) => core::mem::size_of_val(x) as u32,
+            SocketOption::TlsSessionCache(x) => core::mem::size_of_val(x) as u32,
+            SocketOption::TlsTagList(x) => core::mem::size_of_val(x) as u32,
+        }
+    }
 }
