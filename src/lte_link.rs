@@ -1,4 +1,4 @@
-use crate::{at, at_notifications, error::Error};
+use crate::{at, at_notifications::AtNotificationStream, error::Error};
 use core::{
     ops::ControlFlow,
     sync::atomic::{AtomicU32, Ordering},
@@ -24,13 +24,13 @@ impl LteLink {
             defmt::debug!("Enabling modem LTE");
 
             // Set Ultra low power mode
-            crate::at::send_at("AT%XDATAPRFL=0").await?;
+            crate::at::send_at::<0>("AT%XDATAPRFL=0").await?;
             // Set UICC low power mode
-            crate::at::send_at("AT+CEPPI=1").await?;
+            crate::at::send_at::<0>("AT+CEPPI=1").await?;
             // Set Power Saving Mode (PSM)
-            crate::at::send_at("AT+CPSMS=1").await?;
+            crate::at::send_at::<0>("AT+CPSMS=1").await?;
             // Activate LTE without changing GNSS
-            crate::at::send_at("AT+CFUN=21").await?;
+            crate::at::send_at::<0>("AT+CFUN=21").await?;
         }
 
         Ok(LteLink(()))
@@ -39,21 +39,29 @@ impl LteLink {
     pub async fn wait_for_link(&self) -> Result<(), Error> {
         use futures::StreamExt;
 
-        let notification_waiter = at_notifications::get_stream::<256, 4>()
-            .filter_map(|notif| async move {
-                match Self::get_cereg_stat_control_flow(Self::parse_cereg(notif.as_str())) {
-                    ControlFlow::Continue(_) => None,
-                    ControlFlow::Break(v) => Some(v),
-                }
-            })
-            .take(1)
-            .fold(Ok(()), |_, res| async { res });
+        let notification_stream = AtNotificationStream::<64, 4>::new().await;
+        futures::pin_mut!(notification_stream);
+        notification_stream.as_mut().register().await;
 
-        futures::join!(
-            at::send_at("AT+CEREG=1"),
-            at::send_at_notif("AT+CEREG?"),
-            notification_waiter
-        ).2
+        at::send_at::<0>("AT+CEREG=1").await?;
+        match Self::get_cereg_stat_control_flow(Self::parse_cereg(
+            at::send_at::<64>("AT+CEREG?").await?.as_str(),
+        )) {
+            ControlFlow::Continue(_) => {}
+            ControlFlow::Break(result) => return result,
+        }
+
+        let mut stream = notification_stream
+            .map(|notif| Self::get_cereg_stat_control_flow(Self::parse_cereg(notif.as_str())));
+
+        while let Some(cereg) = stream.next().await {
+            match cereg {
+                ControlFlow::Continue(_) => {}
+                ControlFlow::Break(result) => return result,
+            }
+        }
+
+        unreachable!()
     }
 
     fn parse_cereg(string: &str) -> Result<i32, Error> {
@@ -65,14 +73,16 @@ impl LteLink {
             .finish()
             .map(|(_, stat)| stat);
 
-        cereg.or_else(|_| {
-            at_commands::parser::CommandParser::parse(string.as_bytes())
-            .expect_identifier(b"+CEREG:")
-            .expect_int_parameter()
-            .expect_identifier(b"\r\n")
-            .finish()
-            .map(|(stat,)| stat)
-        }).map_err(|e| e.into())
+        cereg
+            .or_else(|_| {
+                at_commands::parser::CommandParser::parse(string.as_bytes())
+                    .expect_identifier(b"+CEREG:")
+                    .expect_int_parameter()
+                    .expect_identifier(b"\r\n")
+                    .finish()
+                    .map(|(stat,)| stat)
+            })
+            .map_err(|e| e.into())
     }
 
     fn get_cereg_stat_control_flow(stat: Result<i32, Error>) -> ControlFlow<Result<(), Error>, ()> {
@@ -90,7 +100,7 @@ impl LteLink {
 impl Drop for LteLink {
     fn drop(&mut self) {
         if ACTIVE_LINKS.fetch_sub(1, Ordering::SeqCst) == 1 {
-            crate::at::send_at_blocking("AT+CFUN=20").unwrap();
+            crate::at::send_at_blocking::<0>("AT+CFUN=20").unwrap();
         }
     }
 }

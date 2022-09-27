@@ -50,7 +50,7 @@ impl Gnss {
 
         #[cfg(feature = "defmt")]
         defmt::debug!("Enabling gnss");
-        crate::at::send_at("AT+CFUN=31").await?;
+        crate::at::send_at::<0>("AT+CFUN=31").await?;
 
         if GNSS_TAKEN.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst) != Ok(false)
         {

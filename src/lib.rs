@@ -124,7 +124,7 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
 
     // Turn off the modem
     let (modem_state,) =
-        at_commands::parser::CommandParser::parse(at::send_at("AT+CFUN?").await?.as_bytes())
+        at_commands::parser::CommandParser::parse(at::send_at::<32>("AT+CFUN?").await?.as_bytes())
             .expect_identifier(b"+CFUN: ")
             .expect_int_parameter()
             .expect_identifier(b"\r\nOK\r\n")
@@ -132,7 +132,7 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
 
     if modem_state != 0 {
         // The modem is still turned on (probably from a previous run). Let's turn it off
-        at::send_at("AT+CFUN=0").await?;
+        at::send_at::<0>("AT+CFUN=0").await?;
     }
 
     if !mode.is_valid_config() {
@@ -141,7 +141,7 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
 
     let mut buffer = [0; 64];
     mode.create_at_command(&mut buffer)?;
-    at::send_at_bytes(&buffer).await?;
+    at::send_at_bytes::<0>(&buffer).await?;
 
     Ok(())
 }
@@ -241,6 +241,6 @@ pub async fn configure_gnss_on_pca10090ns() -> Result<(), Error> {
     defmt::debug!("Configuring XMAGPIO pins for 1574-1577 MHz");
 
     // Configure the GNSS antenna. See `nrf/samples/nrf9160/gps/src/main.c`.
-    crate::at::send_at("AT%XMAGPIO=1,0,0,1,1,1574,1577").await?;
+    crate::at::send_at::<0>("AT%XMAGPIO=1,0,0,1,1,1574,1577").await?;
     Ok(())
 }
