@@ -43,19 +43,20 @@ unsafe extern "C" fn gnss_callback(event: i32) {
 pub struct Gnss {}
 
 impl Gnss {
+    /// Activate the GPS
     pub async fn new() -> Result<Self, Error> {
         if unsafe { !nrfxlib_sys::nrf_modem_is_initialized() } {
             return Err(Error::ModemNotInitialized);
         }
 
-        #[cfg(feature = "defmt")]
-        defmt::debug!("Enabling gnss");
-        crate::at::send_at::<0>("AT+CFUN=31").await?;
-
         if GNSS_TAKEN.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst) != Ok(false)
         {
             return Err(Error::GnssAlreadyTaken);
         }
+
+        #[cfg(feature = "defmt")]
+        defmt::debug!("Enabling gnss");
+        crate::at::send_at::<0>("AT+CFUN=31").await?;
 
         unsafe {
             nrfxlib_sys::nrf_modem_gnss_event_handler_set(Some(gnss_callback));

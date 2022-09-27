@@ -1,19 +1,33 @@
-use crate::{ip::NrfSockAddr, Error};
+use crate::{ip::NrfSockAddr, Error, lte_link::LteLink};
 use arrayvec::ArrayString;
 use core::str::FromStr;
 use no_std_net::{IpAddr, SocketAddr};
 
-pub fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
+/// Get the IP address that corresponds to the given hostname.
+/// 
+/// The modem has an internal cache so this process may be really quick.
+/// If the hostname is not known internally or if it has expired, then it has to be requested from a DNS server.
+/// 
+/// While this function is async, the actual DNS bit is blocking because the modem sadly has no async API for this.
+/// 
+/// The modem API is capable of setting the dns server, but that's not yet implemented in this wrapper.
+pub async fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
     #[cfg(feature = "defmt")]
     defmt::debug!("Resolving dns hostname for \"{}\"", hostname);
 
+    // If we can parse the hostname as an IP address, then we can save a whole lot of trouble
     if let Ok(ip) = hostname.parse() {
         return Ok(ip);
     }
 
+    // The modem only deals with ascii
     if !hostname.is_ascii() {
         return Err(Error::HostnameNotAscii);
     }
+
+    // Make sure we have a network connection
+    let link = LteLink::new().await?;
+    link.wait_for_link().await?;
 
     let mut found_ip = None;
 
@@ -76,6 +90,7 @@ pub fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
             result_iter = (*result_iter).ai_next;
         }
 
+        // The addrinfo is allocated somewhere so we have to make sure to free it
         nrfxlib_sys::nrf_freeaddrinfo(result);
 
         if let Some(found_ip) = found_ip {
