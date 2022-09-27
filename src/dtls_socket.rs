@@ -81,7 +81,7 @@ pub struct DtlsSendSocket<'a> {
 
 impl<'a> DtlsSendSocket<'a> {
     pub async fn send(&self, buf: &[u8]) -> Result<(), Error> {
-        self.socket.socket.send(buf).await.map(|_| ())
+        self.socket.socket.write(buf).await.map(|_| ())
     }
 }
 

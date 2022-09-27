@@ -285,33 +285,7 @@ impl Socket {
         })
         .await
     }
-    pub async fn send(&self, buffer: &[u8]) -> Result<usize, Error> {
-        SocketFuture::new(|| {
-            #[cfg(feature = "defmt")]
-            defmt::trace!("Sending with socket {}", self.fd);
-
-            let mut send_result = unsafe {
-                nrfxlib_sys::nrf_send(self.fd, buffer.as_ptr() as *mut _, buffer.len() as u32, 0)
-            };
-
-            if send_result == -1 {
-                send_result = get_last_error().abs().neg();
-            }
-
-            #[cfg(feature = "defmt")]
-            defmt::trace!("Sending result {}", send_result);
-
-            const NRF_EWOULDBLOCK: i32 = -(nrfxlib_sys::NRF_EWOULDBLOCK as i32);
-
-            match send_result {
-                bytes_received @ 0.. => Poll::Ready(Ok(bytes_received as usize)),
-                NRF_EWOULDBLOCK => Poll::Pending,
-                error => Poll::Ready(Err(Error::NrfError(error))),
-            }
-        })
-        .await
-    }
-    pub fn set_option<'a>(&'a self, option: SocketOption<'a>) -> Result<(), Error> {
+    pub fn set_option<'a>(&'a self, option: SocketOption<'a>) -> Result<(), SocketOptionError> {
         let length = option.get_length();
 
         let result = unsafe {
@@ -325,7 +299,7 @@ impl Socket {
         };
 
         if result < 0 {
-            Err(Error::AddressNotFound)
+            Err(result.into())
         } else {
             Ok(())
         }
@@ -471,6 +445,42 @@ impl<'a> SocketOption<'a> {
             SocketOption::TlsPeerVerify(x) => core::mem::size_of_val(x) as u32,
             SocketOption::TlsSessionCache(x) => core::mem::size_of_val(x) as u32,
             SocketOption::TlsTagList(x) => core::mem::size_of_val(x) as u32,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum SocketOptionError {
+    // The socket argument is not a valid file descriptor.
+    InvalidFileDescriptor,
+    // The send and receive timeout values are too big to fit into the timeout fields in the socket structure.
+    TimeoutTooBig,
+    // The specified option is invalid at the specified socket level or the socket has been shut down.
+    InvalidOption,
+    // The socket is already connected, and a specified option cannot be set while the socket is connected.
+    AlreadyConnected,
+    // The option is not supported by the protocol.
+    UnsupportedOption,
+    // The socket argument does not refer to a socket.
+    NotASocket,
+    // There was insufficient memory available for the operation to complete.
+    OutOfMemory,
+    // Insufficient resources are available in the system to complete the call.
+    OutOfResources,
+}
+
+impl From<i32> for SocketOptionError {
+    fn from(errno: i32) -> Self {
+        match errno.abs() as u32 {
+            nrfxlib_sys::NRF_EBADF => SocketOptionError::InvalidFileDescriptor,
+            nrfxlib_sys::NRF_EINVAL => SocketOptionError::InvalidOption,
+            nrfxlib_sys::NRF_EISCONN => SocketOptionError::AlreadyConnected,
+            nrfxlib_sys::NRF_ENOPROTOOPT => SocketOptionError::UnsupportedOption,
+            nrfxlib_sys::NRF_ENOTSOCK => SocketOptionError::NotASocket,
+            nrfxlib_sys::NRF_ENOMEM => SocketOptionError::OutOfMemory,
+            nrfxlib_sys::NRF_ENOBUFS => SocketOptionError::OutOfResources,
+            _ => panic!("Unknown error code: {}", errno),
         }
     }
 }
