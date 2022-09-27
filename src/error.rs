@@ -2,6 +2,8 @@ use core::str::Utf8Error;
 
 use at_commands::parser::ParseError;
 
+use crate::socket::SocketOptionError;
+
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error {
@@ -20,6 +22,7 @@ pub enum Error {
     HostnameNotAscii,
     HostnameTooLong,
     AddressNotFound,
+    SocketOptionError(SocketOptionError),
 }
 
 pub trait ErrorSource {
@@ -45,5 +48,11 @@ impl From<ParseError> for Error {
 impl From<Utf8Error> for Error {
     fn from(_: Utf8Error) -> Self {
         Self::Utf8Error
+    }
+}
+
+impl From<SocketOptionError> for Error {
+    fn from(e: SocketOptionError) -> Self {
+        Self::SocketOptionError(e)
     }
 }

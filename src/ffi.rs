@@ -485,7 +485,11 @@ pub extern "C" fn nrf_modem_os_sem_take(
             if (*(sem as *mut Semaphore))
                 .current_value
                 .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |val| {
-                    (val > 0).then_some(val - 1)
+                    if val > 0 {
+                        Some(val - 1)
+                    } else {
+                        None
+                    }
                 })
                 .is_ok()
             {

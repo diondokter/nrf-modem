@@ -285,6 +285,25 @@ impl Socket {
         })
         .await
     }
+    pub fn set_option<'a>(&'a self, option: SocketOption<'a>) -> Result<(), SocketOptionError> {
+        let length = option.get_length();
+
+        let result = unsafe {
+            nrfxlib_sys::nrf_setsockopt(
+                self.fd,
+                nrfxlib_sys::NRF_SOL_SECURE.try_into().unwrap(),
+                option.get_name(),
+                option.get_value(),
+                length as u32,
+            )
+        };
+
+        if result < 0 {
+            Err(result.into())
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl Drop for Socket {
@@ -392,4 +411,76 @@ pub enum SocketProtocol {
     All = nrfxlib_sys::NRF_IPPROTO_ALL,
     Tls1v2 = nrfxlib_sys::NRF_SPROTO_TLS1v2,
     DTls1v2 = nrfxlib_sys::NRF_SPROTO_DTLS1v2,
+}
+
+#[derive(Debug)]
+pub enum SocketOption<'a> {
+    TlsHostName(&'a str),
+    TlsPeerVerify(nrfxlib_sys::nrf_sec_peer_verify_t),
+    TlsSessionCache(nrfxlib_sys::nrf_sec_session_cache_t),
+    TlsTagList(&'a [nrfxlib_sys::nrf_sec_tag_t]),
+}
+impl<'a> SocketOption<'a> {
+    pub(crate) fn get_name(&self) -> i32 {
+        match self {
+            SocketOption::TlsHostName(_) => nrfxlib_sys::NRF_SO_SEC_HOSTNAME as i32,
+            SocketOption::TlsPeerVerify(_) => nrfxlib_sys::NRF_SO_SEC_PEER_VERIFY as i32,
+            SocketOption::TlsSessionCache(_) => nrfxlib_sys::NRF_SO_SEC_SESSION_CACHE as i32,
+            SocketOption::TlsTagList(_) => nrfxlib_sys::NRF_SO_SEC_TAG_LIST as i32,
+        }
+    }
+
+    pub(crate) fn get_value(&self) -> *const nrfxlib_sys::ctypes::c_void {
+        match self {
+            SocketOption::TlsHostName(s) => s.as_ptr() as *const nrfxlib_sys::ctypes::c_void,
+            SocketOption::TlsPeerVerify(x) => x as *const _ as *const nrfxlib_sys::ctypes::c_void,
+            SocketOption::TlsSessionCache(x) => x as *const _ as *const nrfxlib_sys::ctypes::c_void,
+            SocketOption::TlsTagList(x) => x.as_ptr() as *const nrfxlib_sys::ctypes::c_void,
+        }
+    }
+
+    pub(crate) fn get_length(&self) -> u32 {
+        match self {
+            SocketOption::TlsHostName(s) => s.len() as u32,
+            SocketOption::TlsPeerVerify(x) => core::mem::size_of_val(x) as u32,
+            SocketOption::TlsSessionCache(x) => core::mem::size_of_val(x) as u32,
+            SocketOption::TlsTagList(x) => core::mem::size_of_val(x) as u32,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum SocketOptionError {
+    // The socket argument is not a valid file descriptor.
+    InvalidFileDescriptor,
+    // The send and receive timeout values are too big to fit into the timeout fields in the socket structure.
+    TimeoutTooBig,
+    // The specified option is invalid at the specified socket level or the socket has been shut down.
+    InvalidOption,
+    // The socket is already connected, and a specified option cannot be set while the socket is connected.
+    AlreadyConnected,
+    // The option is not supported by the protocol.
+    UnsupportedOption,
+    // The socket argument does not refer to a socket.
+    NotASocket,
+    // There was insufficient memory available for the operation to complete.
+    OutOfMemory,
+    // Insufficient resources are available in the system to complete the call.
+    OutOfResources,
+}
+
+impl From<i32> for SocketOptionError {
+    fn from(errno: i32) -> Self {
+        match errno.abs() as u32 {
+            nrfxlib_sys::NRF_EBADF => SocketOptionError::InvalidFileDescriptor,
+            nrfxlib_sys::NRF_EINVAL => SocketOptionError::InvalidOption,
+            nrfxlib_sys::NRF_EISCONN => SocketOptionError::AlreadyConnected,
+            nrfxlib_sys::NRF_ENOPROTOOPT => SocketOptionError::UnsupportedOption,
+            nrfxlib_sys::NRF_ENOTSOCK => SocketOptionError::NotASocket,
+            nrfxlib_sys::NRF_ENOMEM => SocketOptionError::OutOfMemory,
+            nrfxlib_sys::NRF_ENOBUFS => SocketOptionError::OutOfResources,
+            _ => panic!("Unknown error code: {}", errno),
+        }
+    }
 }

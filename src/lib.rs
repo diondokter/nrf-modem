@@ -9,6 +9,7 @@ use linked_list_allocator::Heap;
 pub mod at;
 pub mod at_notifications;
 pub mod dns;
+pub mod dtls_socket;
 pub mod error;
 pub mod ffi;
 pub mod gnss;
