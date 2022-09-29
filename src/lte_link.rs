@@ -11,14 +11,14 @@ static ACTIVE_LINKS: AtomicU32 = AtomicU32::new(0);
 /// An object that keeps the modem connected.
 /// As long as there is an instance, the modem will be kept on.
 /// The drop function disables the modem if there is no link left.
-/// 
+///
 /// Everything will work even if the user doesn't use this directly.
 /// Every API that requires a network connection uses this internally.
-/// 
+///
 /// However, this can lead to inefficiencies.
 /// For example, if you do a dns request and then make a socket to connect to the IP,
 /// the link will fall away in between.
-/// 
+///
 /// The user can prevent this by creating his own instance that the user only drops when all network tasks are done.
 #[derive(Debug, PartialEq, Eq)]
 pub struct LteLink(());
@@ -53,7 +53,7 @@ impl LteLink {
 
     /// While there is an instance, the modem is active.
     /// But that does not mean that there is access to the network.
-    /// 
+    ///
     /// Call this function to wait until there is a connection.
     pub async fn wait_for_link(&self) -> Result<(), Error> {
         use futures::StreamExt;
@@ -126,11 +126,26 @@ impl LteLink {
             _ => ControlFlow::Break(Err(Error::UnexpectedAtResponse)),
         }
     }
+
+    pub async fn deactivate(self) {
+        if ACTIVE_LINKS.fetch_sub(1, Ordering::SeqCst) == 1 {
+            // Turn off the network side of the modem
+            if !crate::at::send_at::<0>("AT+CFUN=20").await.is_ok() {
+                #[cfg(feature = "defmt")]
+                defmt::error!("Failed to deactivate LTE.");
+            }
+        }
+    }
 }
 
 impl Drop for LteLink {
     fn drop(&mut self) {
         if ACTIVE_LINKS.fetch_sub(1, Ordering::SeqCst) == 1 {
+            #[cfg(feature = "defmt")]
+            defmt::warn!(
+                "Turning off LTE synchronously. Use async function deactivate to avoid blocking."
+            );
+
             // Turn off the network side of the modem
             // We need to send this blocking because we don't have async drop yet
             crate::at::send_at_blocking::<0>("AT+CFUN=20").unwrap();
