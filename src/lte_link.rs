@@ -133,7 +133,7 @@ impl Drop for LteLink {
         if ACTIVE_LINKS.fetch_sub(1, Ordering::SeqCst) == 1 {
             // Turn off the network side of the modem
             // We need to send this blocking because we don't have async drop yet
-            crate::at::send_at_blocking::<0>("AT+CFUN=20").unwrap();
+            crate::at::send_at_blocking::<8>("AT+CFUN=20").unwrap();
         }
     }
 }
