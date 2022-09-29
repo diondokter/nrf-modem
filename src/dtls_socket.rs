@@ -29,7 +29,7 @@ impl DtlsSocket {
         self.socket
             .set_option(SocketOption::TlsHostName(hostname))?;
 
-        let ip = dns::get_host_by_name(hostname)?;
+        let ip = dns::get_host_by_name(hostname).await?;
 
         let addr = SocketAddr::from((ip, port));
 

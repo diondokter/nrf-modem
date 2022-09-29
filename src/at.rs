@@ -83,30 +83,36 @@ pub async fn send_at_bytes<const CAP: usize>(command: &[u8]) -> Result<ArrayStri
 
 /// Sends a blocking AT command. The non-blocking variants should be preferred, but sometimes it's necessary to
 /// call this in e.g. a drop function.
+/// 
+/// If a capacity of 0 is given, then the command is given in a way where no textual response is gotten.
+/// A capacity of >0 will require you to have a capacity that is big enough to contain the full message.
+/// This is different from the async functions where the message is simply truncated.
 pub fn send_at_blocking<const CAP: usize>(command: &str) -> Result<ArrayString<CAP>, Error> {
     #[cfg(feature = "defmt")]
     defmt::trace!("AT -> {}", command);
 
-    let mut buffer = [0; CAP];
-    unsafe {
-        nrfxlib_sys::nrf_modem_at_cmd(
-            buffer.as_mut_ptr() as _,
-            buffer.len() as u32,
-            b"%.*s\0".as_ptr(),
-            command.len(),
-            command.as_ptr(),
-        )
-        .into_result()?;
-    }
+    let string = if CAP > 0 {
+        let mut buffer = [0; CAP];
+        unsafe {
+            nrfxlib_sys::nrf_modem_at_cmd(
+                buffer.as_mut_ptr() as _,
+                buffer.len() as u32,
+                b"%.*s\0".as_ptr(),
+                command.len(),
+                command.as_ptr(),
+            )
+            .into_result()?;
+        }
 
-    // I don't know what the rules are of the response when the buffer is too small.
-    // But just to be sure, let's make the last byte a null character.
-    match buffer.last_mut() {
-        Some(last) => *last = 0,
-        None => {}
-    }
+        ArrayString::from_byte_string(&buffer).unwrap()
+    } else {
+        unsafe {
+            nrfxlib_sys::nrf_modem_at_printf(b"%.*s\0".as_ptr(), command.len(), command.as_ptr())
+                .into_result()?;
+        }
 
-    let string = ArrayString::from_byte_string(&buffer).unwrap();
+        ArrayString::new()
+    };
 
     #[cfg(feature = "defmt")]
     defmt::trace!("AT <- {}", string.as_str());
