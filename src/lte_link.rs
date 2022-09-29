@@ -131,10 +131,10 @@ impl LteLink {
     /// Deactivates Lte. Will return an error if there are still active links.
     pub async fn deactivate(self) -> Result<(), Error> {
         if ACTIVE_LINKS.fetch_sub(1, Ordering::SeqCst) == 1 {
+            mem::forget(self);
+
             // Turn off the network side of the modem
             crate::at::send_at::<0>("AT+CFUN=20").await?;
-
-            mem::forget(self);
 
             Ok(())
         } else {
