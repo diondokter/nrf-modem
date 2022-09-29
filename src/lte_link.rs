@@ -2,6 +2,7 @@
 
 use crate::{at, at_notifications::AtNotificationStream, error::Error};
 use core::{
+    mem,
     ops::ControlFlow,
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -127,13 +128,17 @@ impl LteLink {
         }
     }
 
-    pub async fn deactivate(self) {
+    /// Deactivates Lte. Will return an error if there are still active links.
+    pub async fn deactivate(self) -> Result<(), Error> {
         if ACTIVE_LINKS.fetch_sub(1, Ordering::SeqCst) == 1 {
             // Turn off the network side of the modem
-            if !crate::at::send_at::<0>("AT+CFUN=20").await.is_ok() {
-                #[cfg(feature = "defmt")]
-                defmt::error!("Failed to deactivate LTE.");
-            }
+            crate::at::send_at::<0>("AT+CFUN=20").await?;
+
+            mem::forget(self);
+
+            Ok(())
+        } else {
+            Err(Error::LteStillActive)
         }
     }
 }

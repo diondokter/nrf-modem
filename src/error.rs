@@ -22,6 +22,7 @@ pub enum Error {
     HostnameNotAscii,
     HostnameTooLong,
     AddressNotFound,
+    LteStillActive,
     SocketOptionError(SocketOptionError),
 }
 
