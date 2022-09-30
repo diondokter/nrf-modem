@@ -135,11 +135,9 @@ impl LteLink {
         if ACTIVE_LINKS.fetch_sub(1, Ordering::SeqCst) == 1 {
             // Turn off the network side of the modem
             crate::at::send_at::<0>("AT+CFUN=20").await?;
-
-            Ok(())
-        } else {
-            Err(Error::LteStillActive)
         }
+
+        Ok(())
     }
 }
 
