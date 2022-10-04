@@ -128,7 +128,7 @@ impl LteLink {
         }
     }
 
-    /// Deactivates Lte. Will return an error if there are still active links.
+    /// Deactivates Lte. This does the same as dropping the instance, but in an async manner.
     pub async fn deactivate(self) -> Result<(), Error> {
         mem::forget(self);
 
@@ -145,8 +145,8 @@ impl Drop for LteLink {
     fn drop(&mut self) {
         if ACTIVE_LINKS.fetch_sub(1, Ordering::SeqCst) == 1 {
             #[cfg(feature = "defmt")]
-            defmt::warn!(
-                "Turning off LTE synchronously. Use async function deactivate to avoid blocking."
+            defmt::debug!(
+                "Turning off LTE synchronously. Use async function `deactivate` to avoid blocking."
             );
 
             // Turn off the network side of the modem

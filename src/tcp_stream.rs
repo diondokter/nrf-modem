@@ -85,6 +85,13 @@ impl TcpStream {
     pub async fn write(&self, buf: &[u8]) -> Result<(), Error> {
         self.split().1.write(buf).await
     }
+
+    /// Deactivates the socket and the LTE link.
+    /// A normal drop will do the same thing, but blocking.
+    pub async fn deactivate(self) -> Result<(), Error> {
+        self.inner.deactivate().await?;
+        Ok(())
+    }
 }
 
 pub struct TcpReadStream<'a> {

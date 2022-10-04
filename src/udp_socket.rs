@@ -84,6 +84,13 @@ impl UdpSocket {
     pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> Result<(), Error> {
         self.split().1.send_to(buf, addr).await
     }
+
+    /// Deactivates the socket and the LTE link.
+    /// A normal drop will do the same thing, but blocking.
+    pub async fn deactivate(self) -> Result<(), Error> {
+        self.inner.deactivate().await?;
+        Ok(())
+    }
 }
 
 pub struct UdpReceiveSocket<'a> {

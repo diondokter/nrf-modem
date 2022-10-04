@@ -17,7 +17,7 @@ pub(crate) static WAKER_NODE_LIST: Mutex<RefCell<WakerNodeList<()>>> =
 pub struct Socket {
     fd: i32,
     family: SocketFamily,
-    link: LteLink,
+    link: Option<LteLink>,
 }
 
 impl Socket {
@@ -61,7 +61,7 @@ impl Socket {
             }
         }
 
-        Ok(Socket { fd, family, link })
+        Ok(Socket { fd, family, link: Some(link) })
     }
 
     pub fn as_raw_fd(&self) -> i32 {
@@ -76,7 +76,7 @@ impl Socket {
             defmt::Debug2Format(&address)
         );
 
-        self.link.wait_for_link().await?;
+        self.link.as_ref().unwrap().wait_for_link().await?;
 
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
@@ -119,7 +119,7 @@ impl Socket {
             defmt::Debug2Format(&address)
         );
 
-        self.link.wait_for_link().await?;
+        self.link.as_ref().unwrap().wait_for_link().await?;
 
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
@@ -285,6 +285,7 @@ impl Socket {
         })
         .await
     }
+
     pub fn set_option<'a>(&'a self, option: SocketOption<'a>) -> Result<(), SocketOptionError> {
         let length = option.get_length();
 
@@ -303,6 +304,13 @@ impl Socket {
         } else {
             Ok(())
         }
+    }
+
+    /// Deactivates the socket and the LTE link.
+    /// A normal drop will do the same thing, but blocking.
+    pub async fn deactivate(mut self) -> Result<(), Error> {
+        self.link.take().unwrap().deactivate().await?;
+        Ok(())
     }
 }
 

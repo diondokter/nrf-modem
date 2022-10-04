@@ -7,39 +7,39 @@ use crate::{
 use no_std_net::SocketAddr;
 
 pub struct DtlsSocket {
-    socket: Socket,
+    inner: Socket,
 }
 
 impl DtlsSocket {
     pub async fn new(peer_verify: PeerVerification, security_tags: &[u32]) -> Result<Self, Error> {
-        let socket = Socket::create(
+        let inner = Socket::create(
             SocketFamily::Ipv4,
             SocketType::Datagram,
             SocketProtocol::DTls1v2,
         )
         .await?;
-        socket.set_option(SocketOption::TlsPeerVerify(peer_verify.as_integer()))?;
-        socket.set_option(SocketOption::TlsSessionCache(0))?;
-        socket.set_option(SocketOption::TlsTagList(security_tags))?;
+        inner.set_option(SocketOption::TlsPeerVerify(peer_verify.as_integer()))?;
+        inner.set_option(SocketOption::TlsSessionCache(0))?;
+        inner.set_option(SocketOption::TlsTagList(security_tags))?;
 
-        Ok(DtlsSocket { socket })
+        Ok(DtlsSocket { inner })
     }
 
     pub async fn connect(&mut self, hostname: &str, port: u16) -> Result<(), Error> {
-        self.socket
+        self.inner
             .set_option(SocketOption::TlsHostName(hostname))?;
 
         let ip = dns::get_host_by_name(hostname).await?;
 
         let addr = SocketAddr::from((ip, port));
 
-        self.socket.connect(addr).await?;
+        self.inner.connect(addr).await?;
 
         Ok(())
     }
 
     pub fn as_raw_fd(&self) -> i32 {
-        self.socket.as_raw_fd()
+        self.inner.as_raw_fd()
     }
 
     pub fn split(&self) -> (DtlsReceiveSocket<'_>, DtlsSendSocket<'_>) {
@@ -59,6 +59,13 @@ impl DtlsSocket {
     pub async fn send(&self, buf: &[u8]) -> Result<(), Error> {
         self.split().1.send(buf).await
     }
+
+    /// Deactivates the socket and the LTE link.
+    /// A normal drop will do the same thing, but blocking.
+    pub async fn deactivate(self) -> Result<(), Error> {
+        self.inner.deactivate().await?;
+        Ok(())
+    }
 }
 
 pub struct DtlsReceiveSocket<'a> {
@@ -70,7 +77,7 @@ impl<'a> DtlsReceiveSocket<'a> {
         &self,
         buf: &'buf mut [u8],
     ) -> Result<(&'buf mut [u8], SocketAddr), Error> {
-        let (received_len, addr) = self.socket.socket.receive_from(buf).await?;
+        let (received_len, addr) = self.socket.inner.receive_from(buf).await?;
         Ok((&mut buf[..received_len], addr))
     }
 }
@@ -81,7 +88,7 @@ pub struct DtlsSendSocket<'a> {
 
 impl<'a> DtlsSendSocket<'a> {
     pub async fn send(&self, buf: &[u8]) -> Result<(), Error> {
-        self.socket.socket.write(buf).await.map(|_| ())
+        self.socket.inner.write(buf).await.map(|_| ())
     }
 }
 
