@@ -58,6 +58,8 @@ pub async fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
             &mut result as *mut *mut _,
         );
 
+        let deactivation_result = link.deactivate().await;
+
         if err > 0 {
             return Err(Error::NrfError(err));
         } else if err == -1 {
@@ -66,6 +68,11 @@ pub async fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
 
         if result.is_null() {
             return Err(Error::AddressNotFound);
+        }
+
+        if let Err(deactivation_error) = deactivation_result {
+            nrfxlib_sys::nrf_freeaddrinfo(result);
+            return Err(deactivation_error);
         }
 
         let mut result_iter = result;
