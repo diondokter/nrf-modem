@@ -65,17 +65,23 @@ impl Gnss {
         Ok(Gnss {})
     }
 
+    /// Do a single GPS fix until a valid Position Velocity Time (PVT) is found.
+    ///
+    /// The `timeout_seconds` parameter controls the maximum time the GNSS receiver is allowed to run while trying to produce a valid PVT estimate.
+    /// If the value is non-zero, the GNSS receiver is turned off after the time is up regardless of whether a valid PVT estimate was produced or not.
+    /// If the value is set to zero, the GNSS receiver is allowed to run indefinitely until a valid PVT estimate is produced.
+    /// A sane default value: 60s.
     pub fn start_single_fix(
         &mut self,
         config: GnssConfig,
+        timeout_seconds: u16,
     ) -> Result<GnssDataIter<'_>, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
         unsafe {
-            nrfxlib_sys::nrf_modem_gnss_fix_interval_set(0)
-                .into_result()
-                .unwrap();
+            nrfxlib_sys::nrf_modem_gnss_fix_interval_set(0).into_result()?;
+            nrfxlib_sys::nrf_modem_gnss_fix_retry_set(timeout_seconds).into_result()?;
         }
 
         #[cfg(feature = "defmt")]
@@ -93,10 +99,7 @@ impl Gnss {
         Ok(GnssDataIter::new(true))
     }
 
-    pub fn start_continuous_fix(
-        &mut self,
-        config: GnssConfig,
-    ) -> Result<GnssDataIter<'_>, Error> {
+    pub fn start_continuous_fix(&mut self, config: GnssConfig) -> Result<GnssDataIter<'_>, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -155,7 +158,6 @@ impl Gnss {
             nrfxlib_sys::nrf_modem_gnss_elevation_threshold_set(config.elevation_threshold_angle)
                 .into_result()?;
             nrfxlib_sys::nrf_modem_gnss_use_case_set(config.use_case.into()).into_result()?;
-            nrfxlib_sys::nrf_modem_gnss_fix_retry_set(config.fix_retry).into_result()?;
             nrfxlib_sys::nrf_modem_gnss_nmea_mask_set(config.nmea_mask.into()).into_result()?;
             nrfxlib_sys::nrf_modem_gnss_power_mode_set(u32::from(config.power_mode) as _)
                 .into_result()?;
@@ -290,14 +292,6 @@ pub struct GnssConfig {
     /// Default value: 5 deg
     pub elevation_threshold_angle: u8,
     pub use_case: GnssUsecase,
-    /// Retry time in seconds.
-    ///
-    /// Fix retry parameter controls the maximum time the GNSS receiver is allowed to run while trying to produce a valid PVT estimate.
-    /// If the fix retry time is non-zero, the GNSS receiver is turned off after the fix retry time is up regardless of whether a valid PVT estimate was produced or not.
-    /// If fix retry parameter is set to zero, the GNSS receiver is allowed to run indefinitely until a valid PVT estimate is produced.
-    ///
-    /// Default value: 60s
-    pub fix_retry: u16,
     pub nmea_mask: NmeaMask,
     pub timing_source: GnssTimingSource,
     pub power_mode: GnssPowerSaveMode,
@@ -308,7 +302,6 @@ impl Default for GnssConfig {
         Self {
             elevation_threshold_angle: 5,
             use_case: Default::default(),
-            fix_retry: 60,
             nmea_mask: Default::default(),
             timing_source: Default::default(),
             power_mode: Default::default(),
