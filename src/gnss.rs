@@ -2,7 +2,6 @@ use crate::error::{Error, ErrorSource};
 use arrayvec::{ArrayString, ArrayVec};
 use core::{
     cell::RefCell,
-    marker::PhantomData,
     mem::{size_of, MaybeUninit},
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
@@ -72,10 +71,10 @@ impl Gnss {
     /// If the value is set to zero, the GNSS receiver is allowed to run indefinitely until a valid PVT estimate is produced.
     /// A sane default value: 60s.
     pub fn start_single_fix(
-        &mut self,
+        mut self,
         config: GnssConfig,
         timeout_seconds: u16,
-    ) -> Result<GnssDataIter<'_>, Error> {
+    ) -> Result<GnssDataIter, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -96,10 +95,10 @@ impl Gnss {
             nrfxlib_sys::nrf_modem_gnss_start();
         }
 
-        Ok(GnssDataIter::new(true))
+        Ok(GnssDataIter::new(true, self))
     }
 
-    pub fn start_continuous_fix(&mut self, config: GnssConfig) -> Result<GnssDataIter<'_>, Error> {
+    pub fn start_continuous_fix(mut self, config: GnssConfig) -> Result<GnssDataIter, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -121,14 +120,14 @@ impl Gnss {
             nrfxlib_sys::nrf_modem_gnss_start();
         }
 
-        Ok(GnssDataIter::new(false))
+        Ok(GnssDataIter::new(false, self))
     }
 
     pub fn start_periodic_fix(
-        &mut self,
+        mut self,
         config: GnssConfig,
         period_seconds: u16,
-    ) -> Result<GnssDataIter<'_>, Error> {
+    ) -> Result<GnssDataIter, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -150,7 +149,7 @@ impl Gnss {
             nrfxlib_sys::nrf_modem_gnss_start();
         }
 
-        Ok(GnssDataIter::new(false))
+        Ok(GnssDataIter::new(false, self))
     }
 
     fn apply_config(&mut self, config: GnssConfig) -> Result<(), Error> {
@@ -459,24 +458,28 @@ impl GnssData {
     }
 }
 
-pub struct GnssDataIter<'g> {
+pub struct GnssDataIter {
     single_fix: bool,
     done: bool,
-    _phantom: PhantomData<&'g ()>,
+    gnss: Option<Gnss>,
 }
 
-impl<'g> GnssDataIter<'g> {
-    fn new(single_fix: bool) -> Self {
+impl GnssDataIter {
+    fn new(single_fix: bool, gnss: Gnss) -> Self {
         GNSS_NOTICED_EVENTS.store(0, Ordering::SeqCst);
         Self {
             single_fix,
             done: false,
-            _phantom: Default::default(),
+            gnss: Some(gnss),
         }
+    }
+
+    pub fn free(mut self) -> Gnss {
+        self.gnss.take().unwrap()
     }
 }
 
-impl<'g> Stream for GnssDataIter<'g> {
+impl Stream for GnssDataIter {
     type Item = Result<GnssData, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -539,7 +542,7 @@ impl<'g> Stream for GnssDataIter<'g> {
     }
 }
 
-impl<'g> Drop for GnssDataIter<'g> {
+impl Drop for GnssDataIter {
     fn drop(&mut self) {
         if !self.done {
             unsafe {
