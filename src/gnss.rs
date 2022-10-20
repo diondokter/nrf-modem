@@ -68,7 +68,7 @@ impl Gnss {
     pub fn start_single_fix(
         &mut self,
         config: GnssConfig,
-    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + '_, Error> {
+    ) -> Result<GnssDataIter<'_>, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -96,7 +96,7 @@ impl Gnss {
     pub fn start_continuous_fix(
         &mut self,
         config: GnssConfig,
-    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + '_, Error> {
+    ) -> Result<GnssDataIter<'_>, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -125,7 +125,7 @@ impl Gnss {
         &mut self,
         config: GnssConfig,
         period_seconds: u16,
-    ) -> Result<impl Stream<Item = Result<GnssData, Error>> + '_, Error> {
+    ) -> Result<GnssDataIter<'_>, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -466,7 +466,7 @@ impl GnssData {
     }
 }
 
-struct GnssDataIter<'g> {
+pub struct GnssDataIter<'g> {
     single_fix: bool,
     done: bool,
     _phantom: PhantomData<&'g ()>,
