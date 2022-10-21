@@ -76,6 +76,13 @@ static TX_ALLOCATOR: WrappedHeap = Mutex::new(RefCell::new(None));
 
 /// Start the NRF Modem library
 pub async fn init(mode: SystemMode) -> Result<(), Error> {
+    // The modem is only certified when the DC/DC converter is enabled and it isn't by default
+    unsafe {
+        (*nrf9160_pac::REGULATORS_NS::PTR)
+            .dcdcen
+            .modify(|_, w| w.dcdcen().enabled());
+    }
+
     unsafe {
         /// Allocate some space in global data to use as a heap.
         static mut HEAP_MEMORY: [u32; 1024] = [0u32; 1024];
