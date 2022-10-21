@@ -5,22 +5,38 @@ use crate::{
     lte_link::LteLink,
     waker_node_list::{WakerNode, WakerNodeList},
 };
-use core::{cell::RefCell, future::Future, marker::PhantomData, ops::Neg, task::Poll};
+use core::{
+    cell::RefCell,
+    future::Future,
+    marker::PhantomData,
+    ops::{Deref, Neg},
+    sync::atomic::{AtomicU8, Ordering},
+    task::Poll,
+};
 use critical_section::Mutex;
 use no_std_net::SocketAddr;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
+/// A list of waker nodes that are waiting for a socket interrupt
 pub(crate) static WAKER_NODE_LIST: Mutex<RefCell<WakerNodeList<()>>> =
     Mutex::new(RefCell::new(WakerNodeList::new()));
 
+/// Internal socket implementation
 #[derive(Debug, PartialEq, Eq)]
 pub struct Socket {
+    /// The file descriptor given by the modem lib
     fd: i32,
+    /// The socket family (required to know when we need to decipher an incoming IP address)
     family: SocketFamily,
+    /// The link this socket holds to keep the LTE alive.
+    /// This is an option because when deactivating we need to take ownership of it.
     link: Option<LteLink>,
+    /// Gets set to true when the socket has been split. This is relevant for the drop functions
+    split: bool,
 }
 
 impl Socket {
+    /// Create a new socket with the given parameters
     pub async fn create(
         family: SocketFamily,
         s_type: SocketType,
@@ -34,8 +50,10 @@ impl Socket {
             protocol as u32 as i32
         );
 
+        // Let's activate the modem
         let link = LteLink::new().await?;
 
+        // Create the socket in the nrf-modem lib
         let fd = unsafe {
             nrfxlib_sys::nrf_socket(
                 family as u32 as i32,
@@ -44,6 +62,7 @@ impl Socket {
             )
         };
 
+        // If the fd is -1, then there is an error in `errno`
         if fd == -1 {
             return Err(Error::NrfError(get_last_error()));
         }
@@ -61,13 +80,43 @@ impl Socket {
             }
         }
 
-        Ok(Socket { fd, family, link: Some(link) })
+        Ok(Socket {
+            fd,
+            family,
+            link: Some(link),
+            split: false,
+        })
     }
 
+    /// Get the nrf-modem file descriptor so the user can opt out of using this high level wrapper for things
     pub fn as_raw_fd(&self) -> i32 {
         self.fd
     }
 
+    pub fn split(mut self) -> (SplitSocketHandle, SplitSocketHandle) {
+        let index = SplitSocketHandle::get_new_spot();
+        self.split = true;
+
+        (
+            SplitSocketHandle {
+                inner: Some(Socket {
+                    fd: self.fd,
+                    family: self.family,
+                    link: self.link.clone(),
+                    split: true,
+                }),
+                index,
+            },
+            SplitSocketHandle {
+                inner: Some(self),
+                index,
+            },
+        )
+    }
+
+    /// Connect to the given socket address.
+    ///
+    /// This calls the `nrf_connect` function and can be used for tcp streams, udp connections and dtls connections
     pub async fn connect(&self, address: SocketAddr) -> Result<(), Error> {
         #[cfg(feature = "defmt")]
         defmt::debug!(
@@ -76,14 +125,19 @@ impl Socket {
             defmt::Debug2Format(&address)
         );
 
+        // Before we can connect, we need to make sure we have a working link.
+        // It is possible this will never resolve, but it is up to the user to manage the timeouts.
         self.link.as_ref().unwrap().wait_for_link().await?;
 
+        // Dive into the non-blocking C API, so we connect in a socket future
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Connecting socket {}", self.fd);
 
+            // Cast the address to something the nrf-modem understands
             let address = NrfSockAddr::from(address);
 
+            // Do the connect call, this is non-blocking due to the socket setup
             let mut connect_result = unsafe {
                 nrfxlib_sys::nrf_connect(self.fd, address.as_ptr(), address.size() as u32)
             };
@@ -100,9 +154,13 @@ impl Socket {
             defmt::trace!("Connect result {}", connect_result);
 
             match connect_result {
+                // 0 when we have succesfully connected
                 0 => Poll::Ready(Ok(())),
+                // The socket was already connected
                 NRF_EISCONN => Poll::Ready(Ok(())),
+                // The socket is not yet connected
                 NRF_EINPROGRESS | NRF_EALREADY => Poll::Pending,
+                // Something else, this is likely an error
                 error => Poll::Ready(Err(Error::NrfError(error))),
             }
         })
@@ -111,6 +169,9 @@ impl Socket {
         Ok(())
     }
 
+    /// Bind the socket to a given address.
+    ///
+    /// This calls the `nrf_bind` function and can be used for udp sockets
     pub async fn bind(&self, address: SocketAddr) -> Result<(), Error> {
         #[cfg(feature = "defmt")]
         defmt::debug!(
@@ -119,14 +180,19 @@ impl Socket {
             defmt::Debug2Format(&address)
         );
 
+        // Before we can connect, we need to make sure we have a working link.
+        // It is possible this will never resolve, but it is up to the user to manage the timeouts.
         self.link.as_ref().unwrap().wait_for_link().await?;
 
+        // Dive into the non-blocking C API, so we connect in a socket future
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Binding socket {}", self.fd);
 
+            // Cast the address to something the nrf-modem understands
             let address = NrfSockAddr::from(address);
 
+            // Do the bind call, this is non-blocking due to the socket setup
             let mut bind_result =
                 unsafe { nrfxlib_sys::nrf_bind(self.fd, address.as_ptr(), address.size() as u32) };
 
@@ -142,9 +208,13 @@ impl Socket {
             defmt::trace!("Bind result {}", bind_result);
 
             match bind_result {
+                // 0 when we have succesfully connected
                 0 => Poll::Ready(Ok(())),
+                // The socket was already connected
                 NRF_EISCONN => Poll::Ready(Ok(())),
+                // The socket is not yet connected
                 NRF_EINPROGRESS | NRF_EALREADY => Poll::Pending,
+                // Something else, this is likely an error
                 error => Poll::Ready(Err(Error::NrfError(error))),
             }
         })
@@ -316,14 +386,18 @@ impl Socket {
 
 impl Drop for Socket {
     fn drop(&mut self) {
-        let e = unsafe { nrfxlib_sys::nrf_close(self.fd) };
+        if !self.split {
+            let e = unsafe { nrfxlib_sys::nrf_close(self.fd) };
 
-        if e == -1 {
-            Result::<(), _>::Err(Error::NrfError(get_last_error())).unwrap();
+            if e == -1 {
+                Result::<(), _>::Err(Error::NrfError(get_last_error())).unwrap();
+            }
         }
     }
 }
 
+/// A future that automatically manages its waker and its registration to [WAKER_NODE_LIST].
+/// After the waker management in `poll` the runner is called which must return the [Poll] result.
 struct SocketFuture<R, O>
 where
     R: FnMut() -> Poll<Result<O, Error>> + Unpin,
@@ -381,6 +455,7 @@ where
     O: Unpin,
 {
     fn drop(&mut self) {
+        // Make sure to remove the waker node from this list when we have to
         if let Some(waker_node) = self.waker_node.as_mut() {
             critical_section::with(|cs| unsafe {
                 WAKER_NODE_LIST
@@ -489,6 +564,59 @@ impl From<i32> for SocketOptionError {
             nrfxlib_sys::NRF_ENOMEM => SocketOptionError::OutOfMemory,
             nrfxlib_sys::NRF_ENOBUFS => SocketOptionError::OutOfResources,
             _ => panic!("Unknown error code: {}", errno),
+        }
+    }
+}
+
+const ATOMIC_U8_INIT: AtomicU8 = AtomicU8::new(0);
+static ACTIVE_SPLIT_SOCKETS: [AtomicU8; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize] =
+    [ATOMIC_U8_INIT; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize];
+
+pub struct SplitSocketHandle {
+    inner: Option<Socket>,
+    index: usize,
+}
+
+impl SplitSocketHandle {
+    pub async fn deactivate(mut self) -> Result<(), Error> {
+        let mut inner = self.inner.take().unwrap();
+
+        if ACTIVE_SPLIT_SOCKETS[self.index].fetch_sub(1, Ordering::SeqCst) == 1 {
+            // We were the last handle to drop so the inner socket isn't split anymore
+            inner.split = false;
+        }
+
+        inner.deactivate().await?;
+
+        Ok(())
+    }
+
+    fn get_new_spot() -> usize {
+        for (index, count) in ACTIVE_SPLIT_SOCKETS.iter().enumerate() {
+            if count.compare_exchange(0, 2, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                return index;
+            }
+        }
+
+        unreachable!("It should not be possible to have more splits than the maximum socket count");
+    }
+}
+
+impl Deref for SplitSocketHandle {
+    type Target = Socket;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner.as_ref().unwrap()
+    }
+}
+
+impl Drop for SplitSocketHandle {
+    fn drop(&mut self) {
+        if let Some(inner) = self.inner.as_mut() {
+            if ACTIVE_SPLIT_SOCKETS[self.index].fetch_sub(1, Ordering::SeqCst) == 1 {
+                // We were the last handle to drop so the inner socket isn't split anymore
+                inner.split = false;
+            }
         }
     }
 }

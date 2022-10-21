@@ -1,14 +1,63 @@
 use crate::{
     error::Error,
-    socket::{Socket, SocketFamily, SocketProtocol, SocketType},
+    socket::{Socket, SocketFamily, SocketProtocol, SocketType, SplitSocketHandle},
 };
 use no_std_net::ToSocketAddrs;
 
+/// A TCP stream that is connected to another endpoint
 pub struct TcpStream {
     inner: Socket,
 }
 
+macro_rules! impl_receive {
+    () => {
+        /// Try fill the given buffer with the data that has been received. The written part of the
+        /// buffer is returned.
+        pub async fn receive<'buf>(&self, buf: &'buf mut [u8]) -> Result<&'buf mut [u8], Error> {
+            let max_receive_len = 1024.min(buf.len());
+            let received_bytes = self
+                .socket()
+                .receive(&mut buf[..max_receive_len])
+                .await?;
+            Ok(&mut buf[..received_bytes])
+        }
+    
+        /// Fill the entire buffer with data that has been received. This will wait as long as necessary to fill up the
+        /// buffer.
+        pub async fn receive_exact(&self, buf: &mut [u8]) -> Result<(), Error> {
+            let mut received_bytes = 0;
+    
+            while received_bytes < buf.len() {
+                received_bytes += self.receive(&mut buf[received_bytes..]).await?.len();
+            }
+    
+            Ok(())
+        }
+    };
+}
+
+macro_rules! impl_write {
+    () => {
+        /// Write the entire buffer to the stream
+        pub async fn write(&self, buf: &[u8]) -> Result<(), Error> {
+            let mut written_bytes = 0;
+    
+            while written_bytes < buf.len() {
+                // We can't write very huge chunks because then the socket can't process it all at once
+                let max_write_len = 1024.min(buf.len() - written_bytes);
+                written_bytes += self
+                    .socket()
+                    .write(&buf[written_bytes..][..max_write_len])
+                    .await?;
+            }
+    
+            Ok(())
+        }    
+    };
+}
+
 impl TcpStream {
+    /// Connect a TCP stream to the given address
     pub async fn connect(addr: impl ToSocketAddrs) -> Result<Self, Error> {
         let mut last_error = None;
 
@@ -63,10 +112,26 @@ impl TcpStream {
         Err(last_error.take().unwrap())
     }
 
+    /// Get the raw underlying file descriptor for when you need to interact with the nrf libraries directly
     pub fn as_raw_fd(&self) -> i32 {
         self.inner.as_raw_fd()
     }
 
+    fn socket(&self) -> &Socket {
+        &self.inner
+    }
+
+    /// Split the stream into an owned read and write half
+    pub fn split_owned(self) -> (OwnedTcpReadStream, OwnedTcpWriteStream) {
+        let (read_split, write_split) = self.inner.split();
+
+        (
+            OwnedTcpReadStream { stream: read_split },
+            OwnedTcpWriteStream { stream: write_split },
+        )
+    }
+
+    /// Split the stream into a borrowed read and write half
     pub fn split(&self) -> (TcpReadStream<'_>, TcpWriteStream<'_>) {
         (
             TcpReadStream { stream: self },
@@ -74,17 +139,8 @@ impl TcpStream {
         )
     }
 
-    pub async fn receive<'buf>(&self, buf: &'buf mut [u8]) -> Result<&'buf mut [u8], Error> {
-        self.split().0.receive(buf).await
-    }
-
-    pub async fn receive_exact(&self, buf: &mut [u8]) -> Result<(), Error> {
-        self.split().0.receive_exact(buf).await
-    }
-
-    pub async fn write(&self, buf: &[u8]) -> Result<(), Error> {
-        self.split().1.write(buf).await
-    }
+    impl_receive!();
+    impl_write!();
 
     /// Deactivates the socket and the LTE link.
     /// A normal drop will do the same thing, but blocking.
@@ -99,25 +155,11 @@ pub struct TcpReadStream<'a> {
 }
 
 impl<'a> TcpReadStream<'a> {
-    pub async fn receive<'buf>(&self, buf: &'buf mut [u8]) -> Result<&'buf mut [u8], Error> {
-        let max_receive_len = 1024.min(buf.len());
-        let received_bytes = self
-            .stream
-            .inner
-            .receive(&mut buf[..max_receive_len])
-            .await?;
-        Ok(&mut buf[..received_bytes])
+    fn socket(&self) -> &Socket {
+        &self.stream.inner
     }
 
-    pub async fn receive_exact(&self, buf: &mut [u8]) -> Result<(), Error> {
-        let mut received_bytes = 0;
-
-        while received_bytes < buf.len() {
-            received_bytes += self.receive(&mut buf[received_bytes..]).await?.len();
-        }
-
-        Ok(())
-    }
+    impl_receive!();
 }
 
 pub struct TcpWriteStream<'a> {
@@ -125,19 +167,47 @@ pub struct TcpWriteStream<'a> {
 }
 
 impl<'a> TcpWriteStream<'a> {
-    pub async fn write(&self, buf: &[u8]) -> Result<(), Error> {
-        let mut written_bytes = 0;
+    fn socket(&self) -> &Socket {
+        &self.stream.inner
+    }
 
-        while written_bytes < buf.len() {
-            // We can't write very huge chunks because then the socket can't process it all at once
-            let max_write_len = 1024.min(buf.len() - written_bytes);
-            written_bytes += self
-                .stream
-                .inner
-                .write(&buf[written_bytes..][..max_write_len])
-                .await?;
-        }
+    impl_write!();
+}
 
+pub struct OwnedTcpReadStream {
+    stream: SplitSocketHandle,
+}
+
+impl OwnedTcpReadStream {
+    fn socket(&self) -> &Socket {
+        &self.stream
+    }
+
+    impl_receive!();
+
+    /// Deactivates the socket and the LTE link.
+    /// A normal drop will do the same thing, but blocking.
+    pub async fn deactivate(self) -> Result<(), Error> {
+        self.stream.deactivate().await?;
+        Ok(())
+    }
+}
+
+pub struct OwnedTcpWriteStream {
+    stream: SplitSocketHandle,
+}
+
+impl OwnedTcpWriteStream {
+    fn socket(&self) -> &Socket {
+        &self.stream
+    }
+
+    impl_write!();
+
+    /// Deactivates the socket and the LTE link.
+    /// A normal drop will do the same thing, but blocking.
+    pub async fn deactivate(self) -> Result<(), Error> {
+        self.stream.deactivate().await?;
         Ok(())
     }
 }

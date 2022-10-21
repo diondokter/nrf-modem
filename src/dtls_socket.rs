@@ -1,13 +1,33 @@
 use crate::{
     dns,
     error::Error,
-    socket::{Socket, SocketFamily, SocketOption, SocketProtocol, SocketType},
+    socket::{Socket, SocketFamily, SocketOption, SocketProtocol, SocketType, SplitSocketHandle},
 };
 
 use no_std_net::SocketAddr;
 
 pub struct DtlsSocket {
     inner: Socket,
+}
+
+macro_rules! impl_receive_from {
+    () => {
+        pub async fn receive_from<'buf>(
+            &self,
+            buf: &'buf mut [u8],
+        ) -> Result<(&'buf mut [u8], SocketAddr), Error> {
+            let (received_len, addr) = self.socket().receive_from(buf).await?;
+            Ok((&mut buf[..received_len], addr))
+        }
+    };
+}
+
+macro_rules! impl_send {
+    () => {
+        pub async fn send(&self, buf: &[u8]) -> Result<(), Error> {
+            self.socket().write(buf).await.map(|_| ())
+        }
+    };
 }
 
 impl DtlsSocket {
@@ -26,8 +46,7 @@ impl DtlsSocket {
     }
 
     pub async fn connect(&mut self, hostname: &str, port: u16) -> Result<(), Error> {
-        self.inner
-            .set_option(SocketOption::TlsHostName(hostname))?;
+        self.inner.set_option(SocketOption::TlsHostName(hostname))?;
 
         let ip = dns::get_host_by_name(hostname).await?;
 
@@ -42,6 +61,21 @@ impl DtlsSocket {
         self.inner.as_raw_fd()
     }
 
+    fn socket(&self) -> &Socket {
+        &self.inner
+    }
+
+    pub fn split_owned(self) -> (OwnedDtlsReceiveSocket, OwnedDtlsSendSocket) {
+        let (read_split, write_split) = self.inner.split();
+
+        (
+            OwnedDtlsReceiveSocket { socket: read_split },
+            OwnedDtlsSendSocket {
+                socket: write_split,
+            },
+        )
+    }
+
     pub fn split(&self) -> (DtlsReceiveSocket<'_>, DtlsSendSocket<'_>) {
         (
             DtlsReceiveSocket { socket: self },
@@ -49,16 +83,8 @@ impl DtlsSocket {
         )
     }
 
-    pub async fn receive_from<'buf>(
-        &self,
-        buf: &'buf mut [u8],
-    ) -> Result<(&'buf mut [u8], SocketAddr), Error> {
-        self.split().0.receive_from(buf).await
-    }
-
-    pub async fn send(&self, buf: &[u8]) -> Result<(), Error> {
-        self.split().1.send(buf).await
-    }
+    impl_receive_from!();
+    impl_send!();
 
     /// Deactivates the socket and the LTE link.
     /// A normal drop will do the same thing, but blocking.
@@ -73,13 +99,11 @@ pub struct DtlsReceiveSocket<'a> {
 }
 
 impl<'a> DtlsReceiveSocket<'a> {
-    pub async fn receive_from<'buf>(
-        &self,
-        buf: &'buf mut [u8],
-    ) -> Result<(&'buf mut [u8], SocketAddr), Error> {
-        let (received_len, addr) = self.socket.inner.receive_from(buf).await?;
-        Ok((&mut buf[..received_len], addr))
+    fn socket(&self) -> &Socket {
+        &self.socket.inner
     }
+
+    impl_receive_from!();
 }
 
 pub struct DtlsSendSocket<'a> {
@@ -87,9 +111,35 @@ pub struct DtlsSendSocket<'a> {
 }
 
 impl<'a> DtlsSendSocket<'a> {
-    pub async fn send(&self, buf: &[u8]) -> Result<(), Error> {
-        self.socket.inner.write(buf).await.map(|_| ())
+    fn socket(&self) -> &Socket {
+        &self.socket.inner
     }
+
+    impl_send!();
+}
+
+pub struct OwnedDtlsReceiveSocket {
+    socket: SplitSocketHandle,
+}
+
+impl OwnedDtlsReceiveSocket {
+    fn socket(&self) -> &Socket {
+        &self.socket
+    }
+
+    impl_receive_from!();
+}
+
+pub struct OwnedDtlsSendSocket {
+    socket: SplitSocketHandle,
+}
+
+impl OwnedDtlsSendSocket {
+    fn socket(&self) -> &Socket {
+        &self.socket
+    }
+
+    impl_send!();
 }
 
 #[derive(Debug, Copy, Clone)]
