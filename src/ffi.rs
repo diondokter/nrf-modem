@@ -542,8 +542,3 @@ struct Semaphore {
 pub extern "C" fn nrf_modem_os_is_in_isr() -> bool {
     cortex_m::peripheral::SCB::vect_active() != cortex_m::peripheral::scb::VectActive::ThreadMode
 }
-
-#[no_mangle]
-pub extern "C" fn abs(x: i32) -> i32 {
-    x.abs()
-}
