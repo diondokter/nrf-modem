@@ -20,6 +20,7 @@ mod udp_socket;
 pub(crate) mod waker_node_list;
 
 pub use no_std_net;
+pub use nrfxlib_sys;
 
 pub use at::*;
 pub use at_notifications::AtNotificationStream;
