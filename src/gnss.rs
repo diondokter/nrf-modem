@@ -227,7 +227,7 @@ impl From<NmeaMask> for u16 {
     }
 }
 
-#[derive(IntoPrimitive, FromPrimitive, Debug, Default)]
+#[derive(Copy, Clone, IntoPrimitive, FromPrimitive, Debug, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u32)]
 enum GnssEventType {
