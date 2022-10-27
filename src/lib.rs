@@ -158,6 +158,7 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
 
     let mut buffer = [0; 64];
     mode.create_at_command(&mut buffer)?;
+    mode.setup_psm().await?;
     at::send_at_bytes::<0>(&buffer).await?;
 
     Ok(())
@@ -200,6 +201,7 @@ pub fn ipc_irq_handler() {
 #[derive(Debug, Copy, Clone)]
 pub struct SystemMode {
     pub lte_support: bool,
+    pub lte_psm_support: bool,
     pub nbiot_support: bool,
     pub gnss_support: bool,
     pub preference: ConnectionPreference,
@@ -221,6 +223,9 @@ pub enum ConnectionPreference {
 
 impl SystemMode {
     fn is_valid_config(&self) -> bool {
+        if self.lte_psm_support && !self.lte_support {
+            return false;
+        }
         match self.preference {
             ConnectionPreference::None => true,
             ConnectionPreference::Lte => self.lte_support,
@@ -243,6 +248,19 @@ impl SystemMode {
             .with_int_parameter(self.preference as u8)
             .finish()
             .map_err(|e| Error::BufferTooSmall(Some(e)))
+    }
+
+    async fn setup_psm(&self) -> Result<(), Error> {
+        if self.lte_support {
+            if self.lte_psm_support {
+                // Set Power Saving Mode (PSM)
+                at::send_at::<0>("AT+CPSMS=1").await?;
+            } else {
+                // Set Power Saving Mode (PSM)
+                at::send_at::<0>("AT+CPSMS=1").await?;
+            }
+        }
+        Ok(())
     }
 }
 

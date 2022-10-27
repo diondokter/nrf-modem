@@ -43,8 +43,6 @@ impl LteLink {
             crate::at::send_at::<0>("AT%XDATAPRFL=0").await?;
             // Set UICC low power mode
             crate::at::send_at::<0>("AT+CEPPI=1").await?;
-            // Set Power Saving Mode (PSM)
-            crate::at::send_at::<0>("AT+CPSMS=1").await?;
             // Activate LTE without changing GNSS
             crate::at::send_at::<0>("AT+CFUN=21").await?;
         }
