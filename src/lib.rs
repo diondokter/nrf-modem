@@ -158,8 +158,9 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
 
     let mut buffer = [0; 64];
     mode.create_at_command(&mut buffer)?;
-    mode.setup_psm().await?;
     at::send_at_bytes::<0>(&buffer).await?;
+
+    mode.setup_psm().await?;
 
     Ok(())
 }
