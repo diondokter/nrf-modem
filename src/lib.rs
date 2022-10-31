@@ -256,8 +256,8 @@ impl SystemMode {
                 // Set Power Saving Mode (PSM)
                 at::send_at::<0>("AT+CPSMS=1").await?;
             } else {
-                // Set Power Saving Mode (PSM)
-                at::send_at::<0>("AT+CPSMS=1").await?;
+                // Turn off PSM
+                at::send_at::<0>("AT+CPSMS=0").await?;
             }
         }
         Ok(())
