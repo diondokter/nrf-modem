@@ -1,6 +1,7 @@
 use crate::{
     error::Error,
     socket::{Socket, SocketFamily, SocketProtocol, SocketType, SplitSocketHandle},
+    CancellationToken,
 };
 use no_std_net::{SocketAddr, ToSocketAddrs};
 
@@ -17,16 +18,19 @@ macro_rules! impl_receive_from {
             &self,
             buf: &'buf mut [u8],
         ) -> Result<(&'buf mut [u8], SocketAddr), Error> {
-            let (received_len, addr) = self.socket().receive_from(buf).await?;
-            Ok((&mut buf[..received_len], addr))
+            self.receive_from_with_cancellation(buf, &Default::default())
+                .await
         }
 
-        /// If a receive operation is going on, then it will be cancelled.
-        /// The receive future will return [Error::OperationCancelled].
-        ///
-        /// This can be useful if you have a long-running task that is waiting on receiving data.
-        pub fn cancel_receive(&self) {
-            self.socket().cancel_receive();
+        /// Try to fill the given buffer with received data.
+        /// The part of the buffer that was filled is returned together with the address of the source of the message.
+        pub async fn receive_from_with_cancellation<'buf>(
+            &self,
+            buf: &'buf mut [u8],
+            token: &CancellationToken,
+        ) -> Result<(&'buf mut [u8], SocketAddr), Error> {
+            let (received_len, addr) = self.socket().receive_from(buf, token).await?;
+            Ok((&mut buf[..received_len], addr))
         }
     };
 }
@@ -35,7 +39,18 @@ macro_rules! impl_send_to {
     () => {
         /// Send the given buffer to the given address
         pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> Result<(), Error> {
-            self.socket().send_to(buf, addr).await.map(|_| ())
+            self.send_to_with_cancellation(buf, addr, &Default::default())
+                .await
+        }
+
+        /// Send the given buffer to the given address
+        pub async fn send_to_with_cancellation(
+            &self,
+            buf: &[u8],
+            addr: SocketAddr,
+            token: &CancellationToken,
+        ) -> Result<(), Error> {
+            self.socket().send_to(buf, addr, token).await.map(|_| ())
         }
     };
 }
@@ -43,6 +58,14 @@ macro_rules! impl_send_to {
 impl UdpSocket {
     /// Bind a new socket to the given address
     pub async fn bind(addr: impl ToSocketAddrs) -> Result<Self, Error> {
+        Self::bind_with_cancellation(addr, &Default::default()).await
+    }
+
+    /// Bind a new socket to the given address
+    pub async fn bind_with_cancellation(
+        addr: impl ToSocketAddrs,
+        token: &CancellationToken,
+    ) -> Result<Self, Error> {
         let mut last_error = None;
 
         let addrs = addr.to_socket_addrs().unwrap();
@@ -50,6 +73,8 @@ impl UdpSocket {
         let mut socketv6 = None;
 
         for addr in addrs {
+            token.as_result()?;
+
             let socket = match addr {
                 no_std_net::SocketAddr::V4(_) => match socketv4 {
                     Some(_) => &mut socketv4,
@@ -81,7 +106,7 @@ impl UdpSocket {
                 },
             };
 
-            match socket.as_mut().unwrap().bind(addr).await {
+            match unsafe { socket.as_mut().unwrap().bind(addr, token).await } {
                 Ok(_) => {
                     return Ok(UdpSocket {
                         inner: socket.take().unwrap(),

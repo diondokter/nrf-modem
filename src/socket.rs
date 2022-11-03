@@ -4,13 +4,14 @@ use crate::{
     ip::NrfSockAddr,
     lte_link::LteLink,
     waker_node_list::{WakerNode, WakerNodeList},
+    CancellationToken,
 };
 use core::{
     cell::RefCell,
     future::Future,
     marker::PhantomData,
     ops::{Deref, Neg},
-    sync::atomic::{AtomicBool, AtomicU8, Ordering},
+    sync::atomic::{AtomicU8, Ordering},
     task::Poll,
 };
 use critical_section::Mutex;
@@ -33,8 +34,6 @@ pub struct Socket {
     link: Option<LteLink>,
     /// Gets set to true when the socket has been split. This is relevant for the drop functions
     split: bool,
-    /// A socket receive operation can be cancelled from the outside by setting this to true and waking the socket
-    receive_canceled: AtomicBool,
 }
 
 impl Socket {
@@ -87,7 +86,6 @@ impl Socket {
             family,
             link: Some(link),
             split: false,
-            receive_canceled: AtomicBool::new(false),
         })
     }
 
@@ -107,7 +105,6 @@ impl Socket {
                     family: self.family,
                     link: self.link.clone(),
                     split: true,
-                    receive_canceled: AtomicBool::new(*self.receive_canceled.get_mut()),
                 }),
                 index,
             },
@@ -120,8 +117,16 @@ impl Socket {
 
     /// Connect to the given socket address.
     ///
-    /// This calls the `nrf_connect` function and can be used for tcp streams, udp connections and dtls connections
-    pub async fn connect(&self, address: SocketAddr) -> Result<(), Error> {
+    /// This calls the `nrf_connect` function and can be used for tcp streams, udp connections and dtls connections.
+    ///
+    /// ## Safety
+    ///
+    /// If the connect is cancelled, the socket may be in a weird state and should be dropped.
+    pub async unsafe fn connect(
+        &self,
+        address: SocketAddr,
+        token: &CancellationToken,
+    ) -> Result<(), Error> {
         #[cfg(feature = "defmt")]
         defmt::debug!(
             "Connecting socket {} to {:?}",
@@ -129,14 +134,24 @@ impl Socket {
             defmt::Debug2Format(&address)
         );
 
+        token.bind_to_current_task().await;
+
         // Before we can connect, we need to make sure we have a working link.
         // It is possible this will never resolve, but it is up to the user to manage the timeouts.
-        self.link.as_ref().unwrap().wait_for_link().await?;
+        self.link
+            .as_ref()
+            .unwrap()
+            .wait_for_link_with_cancellation(token)
+            .await?;
 
         // Dive into the non-blocking C API, so we connect in a socket future
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Connecting socket {}", self.fd);
+
+            if token.is_cancelled() {
+                return Poll::Ready(Err(Error::OperationCancelled));
+            }
 
             // Cast the address to something the nrf-modem understands
             let address = NrfSockAddr::from(address);
@@ -176,7 +191,15 @@ impl Socket {
     /// Bind the socket to a given address.
     ///
     /// This calls the `nrf_bind` function and can be used for udp sockets
-    pub async fn bind(&self, address: SocketAddr) -> Result<(), Error> {
+    ///
+    /// ## Safety
+    ///
+    /// If the bind is cancelled, the socket may be in a weird state and should be dropped.
+    pub async unsafe fn bind(
+        &self,
+        address: SocketAddr,
+        token: &CancellationToken,
+    ) -> Result<(), Error> {
         #[cfg(feature = "defmt")]
         defmt::debug!(
             "Binding socket {} to {:?}",
@@ -184,14 +207,24 @@ impl Socket {
             defmt::Debug2Format(&address)
         );
 
+        token.bind_to_current_task().await;
+
         // Before we can connect, we need to make sure we have a working link.
         // It is possible this will never resolve, but it is up to the user to manage the timeouts.
-        self.link.as_ref().unwrap().wait_for_link().await?;
+        self.link
+            .as_ref()
+            .unwrap()
+            .wait_for_link_with_cancellation(token)
+            .await?;
 
         // Dive into the non-blocking C API, so we connect in a socket future
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Binding socket {}", self.fd);
+
+            if token.is_cancelled() {
+                return Poll::Ready(Err(Error::OperationCancelled));
+            }
 
             // Cast the address to something the nrf-modem understands
             let address = NrfSockAddr::from(address);
@@ -227,10 +260,16 @@ impl Socket {
         Ok(())
     }
 
-    pub async fn write(&self, buffer: &[u8]) -> Result<usize, Error> {
+    pub async fn write(&self, buffer: &[u8], token: &CancellationToken) -> Result<usize, Error> {
+        token.bind_to_current_task().await;
+
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Sending with socket {}", self.fd);
+
+            if token.is_cancelled() {
+                return Poll::Ready(Err(Error::OperationCancelled));
+            }
 
             let mut send_result = unsafe {
                 nrfxlib_sys::nrf_send(self.fd, buffer.as_ptr() as *const _, buffer.len() as u32, 0)
@@ -254,15 +293,18 @@ impl Socket {
         .await
     }
 
-    pub async fn receive(&self, buffer: &mut [u8]) -> Result<usize, Error> {
-        self.receive_canceled.store(false, Ordering::SeqCst);
+    pub async fn receive(
+        &self,
+        buffer: &mut [u8],
+        token: &CancellationToken,
+    ) -> Result<usize, Error> {
+        token.bind_to_current_task().await;
 
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Receiving with socket {}", self.fd);
 
-            if self.receive_canceled.load(Ordering::SeqCst) {
-                // The receive operation has been cancelled, so let's stop
+            if token.is_cancelled() {
                 return Poll::Ready(Err(Error::OperationCancelled));
             }
 
@@ -288,15 +330,18 @@ impl Socket {
         .await
     }
 
-    pub async fn receive_from(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), Error> {
-        self.receive_canceled.store(false, Ordering::SeqCst);
+    pub async fn receive_from(
+        &self,
+        buffer: &mut [u8],
+        token: &CancellationToken,
+    ) -> Result<(usize, SocketAddr), Error> {
+        token.bind_to_current_task().await;
 
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Receiving with socket {}", self.fd);
 
-            if self.receive_canceled.load(Ordering::SeqCst) {
-                // The receive operation has been cancelled, so let's stop
+            if token.is_cancelled() {
                 return Poll::Ready(Err(Error::OperationCancelled));
             }
 
@@ -338,10 +383,21 @@ impl Socket {
         .await
     }
 
-    pub async fn send_to(&self, buffer: &[u8], address: SocketAddr) -> Result<usize, Error> {
+    pub async fn send_to(
+        &self,
+        buffer: &[u8],
+        address: SocketAddr,
+        token: &CancellationToken,
+    ) -> Result<usize, Error> {
+        token.bind_to_current_task().await;
+
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Sending with socket {}", self.fd);
+
+            if token.is_cancelled() {
+                return Poll::Ready(Err(Error::OperationCancelled));
+            }
 
             let addr = NrfSockAddr::from(address);
 
@@ -392,19 +448,6 @@ impl Socket {
         } else {
             Ok(())
         }
-    }
-
-    /// If a receive operation is going on, then it will be cancelled.
-    /// The receive future will return [Error::OperationCancelled].
-    pub fn cancel_receive(&self) {
-        // Set the flag on the socket
-        self.receive_canceled.store(true, Ordering::SeqCst);
-        // Wake all sockets. This is fine, they'll just go to sleep again
-        critical_section::with(|cs| {
-            WAKER_NODE_LIST
-                .borrow_ref_mut(cs)
-                .wake_all_and_reset(|_| ())
-        });
     }
 
     /// Deactivates the socket and the LTE link.

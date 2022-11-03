@@ -1,6 +1,6 @@
 //! Implementation of [LteLink]
 
-use crate::{at, at_notifications::AtNotificationStream, error::Error};
+use crate::{at, at_notifications::AtNotificationStream, error::Error, CancellationToken};
 use core::{
     mem,
     ops::ControlFlow,
@@ -50,12 +50,26 @@ impl LteLink {
         Ok(LteLink(()))
     }
 
-    /// While there is an instance, the modem is active.
+    /// While there is an instance of the LteLink, the modem is active.
     /// But that does not mean that there is access to the network.
     ///
     /// Call this function to wait until there is a connection.
     pub async fn wait_for_link(&self) -> Result<(), Error> {
+        self.wait_for_link_with_cancellation(&Default::default())
+            .await
+    }
+
+    /// While there is an instance of the LteLink, the modem is active.
+    /// But that does not mean that there is access to the network.
+    ///
+    /// Call this function to wait until there is a connection.
+    pub async fn wait_for_link_with_cancellation(
+        &self,
+        token: &CancellationToken,
+    ) -> Result<(), Error> {
         use futures::StreamExt;
+
+        token.bind_to_current_task().await;
 
         // We're gonna be looking for notifications. And to make sure we don't miss one,
         // we already create the stream and register it.
@@ -66,6 +80,8 @@ impl LteLink {
         // Enable the notifications
         at::send_at::<0>("AT+CEREG=1").await?;
 
+        token.as_result()?;
+
         // We won't get a notification if we're already connected.
         // So query the current status
         match Self::get_cereg_stat_control_flow(Self::parse_cereg(
@@ -75,13 +91,17 @@ impl LteLink {
             ControlFlow::Break(result) => return result,
         }
 
+        token.as_result()?;
+
         // We are currently not connected, so lets wait for what the stream turns up
         let mut stream = notification_stream
             .map(|notif| Self::get_cereg_stat_control_flow(Self::parse_cereg(notif.as_str())));
 
         while let Some(cereg) = stream.next().await {
             match cereg {
-                ControlFlow::Continue(_) => {}
+                ControlFlow::Continue(_) => {
+                    token.as_result()?;
+                }
                 ControlFlow::Break(result) => return result,
             }
         }

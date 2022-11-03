@@ -7,6 +7,7 @@ use linked_list_allocator::Heap;
 
 mod at;
 mod at_notifications;
+mod cancellation;
 mod dns;
 mod dtls_socket;
 mod error;
@@ -24,6 +25,7 @@ pub use nrfxlib_sys;
 
 pub use at::*;
 pub use at_notifications::AtNotificationStream;
+pub use cancellation::CancellationToken;
 pub use dns::*;
 pub use dtls_socket::*;
 pub use error::Error;
