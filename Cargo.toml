@@ -20,6 +20,12 @@ no-std-net = "0.6.0"
 critical-section = "1.1"
 embedded-io = { version = "0.3.0", features = ["async"] }
 
+[dev-dependencies]
+futures-test = "0.3.25"
+
 [features]
 default = []
 defmt = ["dep:defmt", "at-commands/defmt"]
+
+# Enable when running tests
+std = ["critical-section/std"]

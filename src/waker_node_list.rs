@@ -153,3 +153,86 @@ impl<T: ?Sized> WakerNodeList<T> {
         self.next_node = None;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::{cell::RefCell, future::Future, task::Poll};
+    use critical_section::Mutex;
+    use futures::FutureExt;
+
+    static WAKER_NODE_LIST: Mutex<RefCell<WakerNodeList<(u8, bool)>>> =
+        Mutex::new(RefCell::new(WakerNodeList::new()));
+
+    fn wake_futures() {
+        critical_section::with(|cs| {
+            WAKER_NODE_LIST
+                .borrow_ref_mut(cs)
+                .wake_all_and_reset(|(data, done)| {
+                    *data *= 2;
+                    *done = true;
+                });
+        })
+    }
+
+    struct TestFuture {
+        waker_node: Option<WakerNode<(u8, bool)>>,
+        data: (u8, bool),
+    }
+
+    impl TestFuture {
+        fn new(data: u8) -> Self {
+            Self {
+                waker_node: None,
+                data: (data, false),
+            }
+        }
+    }
+
+    impl Future for TestFuture {
+        type Output = u8;
+
+        fn poll(
+            mut self: core::pin::Pin<&mut Self>,
+            cx: &mut core::task::Context<'_>,
+        ) -> Poll<Self::Output> {
+            // Register our waker node
+            critical_section::with(|cs| {
+                let data_ptr = &mut self.data as *mut _;
+
+                let mut list = WAKER_NODE_LIST.borrow_ref_mut(cs);
+                let waker_node = self
+                    .waker_node
+                    .get_or_insert_with(|| WakerNode::new(Some(data_ptr), cx.waker().clone()));
+                waker_node.waker = cx.waker().clone();
+                unsafe {
+                    list.append_node(waker_node as *mut _);
+                }
+            });
+
+            if self.data.1 {
+                Poll::Ready(self.data.0)
+            } else {
+                Poll::Pending
+            }
+        }
+    }
+
+    impl Drop for TestFuture {
+        fn drop(&mut self) {
+            // Make sure to remove the waker node from this list when we have to
+            if let Some(waker_node) = self.waker_node.as_mut() {
+                critical_section::with(|cs| unsafe {
+                    WAKER_NODE_LIST
+                        .borrow_ref_mut(cs)
+                        .remove_node(waker_node as *mut _)
+                });
+            }
+        }
+    }
+
+    #[futures_test::test]
+    async fn node_waker_list_no_ub() {
+        assert_eq!(TestFuture::new(5).await, 10);
+    }
+}

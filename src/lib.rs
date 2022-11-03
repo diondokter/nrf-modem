@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(all(not(test), not(feature = "std")), no_std)]
 
 use crate::error::ErrorSource;
 use core::cell::RefCell;
