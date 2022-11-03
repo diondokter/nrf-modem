@@ -20,6 +20,14 @@ macro_rules! impl_receive_from {
             let (received_len, addr) = self.socket().receive_from(buf).await?;
             Ok((&mut buf[..received_len], addr))
         }
+
+        /// If a receive operation is going on, then it will be cancelled.
+        /// The receive future will return [Error::OperationCancelled].
+        ///
+        /// This can be useful if you have a long-running task that is waiting on receiving data.
+        pub fn cancel_receive(&self) {
+            self.socket().cancel_receive();
+        }
     };
 }
 

@@ -23,6 +23,8 @@ pub enum Error {
     HostnameTooLong,
     AddressNotFound,
     SocketOptionError(SocketOptionError),
+    /// The ongoing operation has been cancelled by the user
+    OperationCancelled,
 }
 
 pub trait ErrorSource {

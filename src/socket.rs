@@ -10,7 +10,7 @@ use core::{
     future::Future,
     marker::PhantomData,
     ops::{Deref, Neg},
-    sync::atomic::{AtomicU8, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
     task::Poll,
 };
 use critical_section::Mutex;
@@ -22,7 +22,7 @@ pub(crate) static WAKER_NODE_LIST: Mutex<RefCell<WakerNodeList<()>>> =
     Mutex::new(RefCell::new(WakerNodeList::new()));
 
 /// Internal socket implementation
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Socket {
     /// The file descriptor given by the modem lib
     fd: i32,
@@ -33,6 +33,8 @@ pub struct Socket {
     link: Option<LteLink>,
     /// Gets set to true when the socket has been split. This is relevant for the drop functions
     split: bool,
+    /// A socket receive operation can be cancelled from the outside by setting this to true and waking the socket
+    receive_canceled: AtomicBool,
 }
 
 impl Socket {
@@ -85,6 +87,7 @@ impl Socket {
             family,
             link: Some(link),
             split: false,
+            receive_canceled: AtomicBool::new(false),
         })
     }
 
@@ -104,6 +107,7 @@ impl Socket {
                     family: self.family,
                     link: self.link.clone(),
                     split: true,
+                    receive_canceled: AtomicBool::new(*self.receive_canceled.get_mut()),
                 }),
                 index,
             },
@@ -251,9 +255,16 @@ impl Socket {
     }
 
     pub async fn receive(&self, buffer: &mut [u8]) -> Result<usize, Error> {
+        self.receive_canceled.store(false, Ordering::SeqCst);
+
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Receiving with socket {}", self.fd);
+
+            if self.receive_canceled.load(Ordering::SeqCst) {
+                // The receive operation has been cancelled, so let's stop
+                return Poll::Ready(Err(Error::OperationCancelled));
+            }
 
             let mut receive_result = unsafe {
                 nrfxlib_sys::nrf_recv(self.fd, buffer.as_ptr() as *mut _, buffer.len() as u32, 0)
@@ -278,9 +289,16 @@ impl Socket {
     }
 
     pub async fn receive_from(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), Error> {
+        self.receive_canceled.store(false, Ordering::SeqCst);
+
         SocketFuture::new(|| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Receiving with socket {}", self.fd);
+
+            if self.receive_canceled.load(Ordering::SeqCst) {
+                // The receive operation has been cancelled, so let's stop
+                return Poll::Ready(Err(Error::OperationCancelled));
+            }
 
             // Big enough to store both ipv4 and ipv6
             let mut socket_addr_store =
@@ -365,7 +383,7 @@ impl Socket {
                 nrfxlib_sys::NRF_SOL_SECURE.try_into().unwrap(),
                 option.get_name(),
                 option.get_value(),
-                length as u32,
+                length,
             )
         };
 
@@ -374,6 +392,19 @@ impl Socket {
         } else {
             Ok(())
         }
+    }
+
+    /// If a receive operation is going on, then it will be cancelled.
+    /// The receive future will return [Error::OperationCancelled].
+    pub fn cancel_receive(&self) {
+        // Set the flag on the socket
+        self.receive_canceled.store(true, Ordering::SeqCst);
+        // Wake all sockets. This is fine, they'll just go to sleep again
+        critical_section::with(|cs| {
+            WAKER_NODE_LIST
+                .borrow_ref_mut(cs)
+                .wake_all_and_reset(|_| ())
+        });
     }
 
     /// Deactivates the socket and the LTE link.
@@ -395,6 +426,13 @@ impl Drop for Socket {
         }
     }
 }
+
+impl PartialEq for Socket {
+    fn eq(&self, other: &Self) -> bool {
+        self.fd == other.fd
+    }
+}
+impl Eq for Socket {}
 
 /// A future that automatically manages its waker and its registration to [WAKER_NODE_LIST].
 /// After the waker management in `poll` the runner is called which must return the [Poll] result.
@@ -555,7 +593,7 @@ pub enum SocketOptionError {
 
 impl From<i32> for SocketOptionError {
     fn from(errno: i32) -> Self {
-        match errno.abs() as u32 {
+        match errno.unsigned_abs() {
             nrfxlib_sys::NRF_EBADF => SocketOptionError::InvalidFileDescriptor,
             nrfxlib_sys::NRF_EINVAL => SocketOptionError::InvalidOption,
             nrfxlib_sys::NRF_EISCONN => SocketOptionError::AlreadyConnected,
@@ -593,7 +631,10 @@ impl SplitSocketHandle {
 
     fn get_new_spot() -> usize {
         for (index, count) in ACTIVE_SPLIT_SOCKETS.iter().enumerate() {
-            if count.compare_exchange(0, 2, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            if count
+                .compare_exchange(0, 2, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
                 return index;
             }
         }

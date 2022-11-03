@@ -15,23 +15,37 @@ macro_rules! impl_receive {
         /// buffer is returned.
         pub async fn receive<'buf>(&self, buf: &'buf mut [u8]) -> Result<&'buf mut [u8], Error> {
             let max_receive_len = 1024.min(buf.len());
-            let received_bytes = self
-                .socket()
-                .receive(&mut buf[..max_receive_len])
-                .await?;
+            let received_bytes = self.socket().receive(&mut buf[..max_receive_len]).await?;
             Ok(&mut buf[..received_bytes])
         }
-    
+
         /// Fill the entire buffer with data that has been received. This will wait as long as necessary to fill up the
         /// buffer.
-        pub async fn receive_exact(&self, buf: &mut [u8]) -> Result<(), Error> {
+        ///
+        /// If there's an error while receiving, then the error is returned as well as the part of the buffer that was
+        /// partially filled with received data.
+        pub async fn receive_exact<'buf>(
+            &self,
+            buf: &'buf mut [u8],
+        ) -> Result<(), (Error, &'buf mut [u8])> {
             let mut received_bytes = 0;
-    
+
             while received_bytes < buf.len() {
-                received_bytes += self.receive(&mut buf[received_bytes..]).await?.len();
+                match self.receive(&mut buf[received_bytes..]).await {
+                    Ok(received_data) => received_bytes += received_data.len(),
+                    Err(e) => return Err((e.into(), &mut buf[..received_bytes])),
+                }
             }
-    
+
             Ok(())
+        }
+
+        /// If a receive operation is going on, then it will be cancelled.
+        /// The receive future will return [Error::OperationCancelled].
+        ///
+        /// This can be useful if you have a long-running task that is waiting on receiving data.
+        pub fn cancel_receive(&self) {
+            self.socket().cancel_receive();
         }
     };
 }
@@ -41,7 +55,7 @@ macro_rules! impl_write {
         /// Write the entire buffer to the stream
         pub async fn write(&self, buf: &[u8]) -> Result<(), Error> {
             let mut written_bytes = 0;
-    
+
             while written_bytes < buf.len() {
                 // We can't write very huge chunks because then the socket can't process it all at once
                 let max_write_len = 1024.min(buf.len() - written_bytes);
@@ -50,9 +64,9 @@ macro_rules! impl_write {
                     .write(&buf[written_bytes..][..max_write_len])
                     .await?;
             }
-    
+
             Ok(())
-        }    
+        }
     };
 }
 
@@ -127,7 +141,9 @@ impl TcpStream {
 
         (
             OwnedTcpReadStream { stream: read_split },
-            OwnedTcpWriteStream { stream: write_split },
+            OwnedTcpWriteStream {
+                stream: write_split,
+            },
         )
     }
 

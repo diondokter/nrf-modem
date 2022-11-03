@@ -83,7 +83,7 @@ pub async fn send_at_bytes<const CAP: usize>(command: &[u8]) -> Result<ArrayStri
 
 /// Sends a blocking AT command. The non-blocking variants should be preferred, but sometimes it's necessary to
 /// call this in e.g. a drop function.
-/// 
+///
 /// If a capacity of 0 is given, then the command is given in a way where no textual response is gotten.
 /// A capacity of >0 will require you to have a capacity that is big enough to contain the full message.
 /// This is different from the async functions where the message is simply truncated.
@@ -184,9 +184,8 @@ impl<'c, const CAP: usize> Future for SendATFuture<'c, CAP> {
                     // The callback was called and we have the response
 
                     // Because we handle with c strings, let's at least make the last byte in the buffer a null character
-                    match self.response.last_mut() {
-                        Some(last) => *last = 0,
-                        None => {}
+                    if let Some(last) = self.response.last_mut() {
+                        *last = 0
                     }
 
                     Poll::Ready(Ok(ArrayString::from_byte_string(&self.response).unwrap()))

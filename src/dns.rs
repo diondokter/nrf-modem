@@ -1,15 +1,15 @@
-use crate::{ip::NrfSockAddr, Error, lte_link::LteLink};
+use crate::{ip::NrfSockAddr, lte_link::LteLink, Error};
 use arrayvec::ArrayString;
 use core::str::FromStr;
 use no_std_net::{IpAddr, SocketAddr};
 
 /// Get the IP address that corresponds to the given hostname.
-/// 
+///
 /// The modem has an internal cache so this process may be really quick.
 /// If the hostname is not known internally or if it has expired, then it has to be requested from a DNS server.
-/// 
+///
 /// While this function is async, the actual DNS bit is blocking because the modem sadly has no async API for this.
-/// 
+///
 /// The modem API is capable of setting the dns server, but that's not yet implemented in this wrapper.
 pub async fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
     #[cfg(feature = "defmt")]
