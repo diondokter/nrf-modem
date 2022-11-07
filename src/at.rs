@@ -61,7 +61,12 @@ unsafe extern "C" fn at_callback(resp: *const u8) {
     AT_DATA_WAKER.wake();
 }
 
-/// Send an AT command to the modem
+/// Send an AT command to the modem.
+/// 
+/// The const `CAP` parameter is the size of the returned response string.
+/// It is ok to set this to 0 you don't need the response.
+/// 
+/// If the `CAP` is too small to contain the entire response, then the string is simply tuncated.
 pub async fn send_at<const CAP: usize>(command: &str) -> Result<ArrayString<CAP>, Error> {
     SendATFuture {
         state: Default::default(),
