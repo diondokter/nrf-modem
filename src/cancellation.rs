@@ -9,8 +9,6 @@ use futures::task::AtomicWaker;
 ///
 /// This can be nice for example when you have a task that is 'stuck' receiving data that never arrives,
 /// but you want it to stop doing that so it can continue doing something else.
-///
-/// It is recommended to create a new token for every operation because once cancelled, the token stays in the cancelled state.
 #[derive(Default)]
 pub struct CancellationToken {
     canceled: AtomicBool,
@@ -51,6 +49,13 @@ impl CancellationToken {
     /// Returns whether or not the cancel function has been called already
     pub fn is_cancelled(&self) -> bool {
         self.canceled.load(Ordering::SeqCst)
+    }
+
+    /// Restore the token to the non-cancelled state. This can be used so you can reuse the same token multiple times.
+    /// 
+    /// Calling this may prevent a cancellation, but the cancellation may have already started.
+    pub fn restore(&self) {
+        self.canceled.store(false, Ordering::SeqCst);
     }
 
     /// Creates a result of this type to the `?` operator can be used to return from code.
