@@ -1,7 +1,7 @@
 use crate::{
     error::Error,
     socket::{Socket, SocketFamily, SocketProtocol, SocketType, SplitSocketHandle},
-    CancellationToken,
+    CancellationToken, LteLink,
 };
 use no_std_net::ToSocketAddrs;
 
@@ -115,57 +115,32 @@ impl TcpStream {
         token: &CancellationToken,
     ) -> Result<Self, Error> {
         let mut last_error = None;
-
+        let lte_link = LteLink::new().await?;
         let addrs = addr.to_socket_addrs().unwrap();
-        let mut socketv4 = None;
-        let mut socketv6 = None;
 
         for addr in addrs {
             token.as_result()?;
 
-            let socket = match addr {
-                no_std_net::SocketAddr::V4(_) => match socketv4 {
-                    Some(_) => &mut socketv4,
-                    None => {
-                        socketv4 = Some(
-                            Socket::create(
-                                SocketFamily::Ipv4,
-                                SocketType::Stream,
-                                SocketProtocol::Tcp,
-                            )
-                            .await?,
-                        );
-                        &mut socketv4
-                    }
-                },
-                no_std_net::SocketAddr::V6(_) => match socketv6 {
-                    Some(_) => &mut socketv6,
-                    None => {
-                        socketv6 = Some(
-                            Socket::create(
-                                SocketFamily::Ipv6,
-                                SocketType::Stream,
-                                SocketProtocol::Tcp,
-                            )
-                            .await?,
-                        );
-                        &mut socketv6
-                    }
-                },
+            let family = match addr {
+                no_std_net::SocketAddr::V4(_) => SocketFamily::Ipv4,
+                no_std_net::SocketAddr::V6(_) => SocketFamily::Ipv6,
             };
 
-            match unsafe { socket.as_mut().unwrap().connect(addr, token).await } {
+            let socket = Socket::create(family, SocketType::Stream, SocketProtocol::Tcp).await?;
+
+            match unsafe { socket.connect(addr, token).await } {
                 Ok(_) => {
-                    return Ok(TcpStream {
-                        inner: socket.take().unwrap(),
-                    })
+                    lte_link.deactivate().await?;
+                    return Ok(TcpStream { inner: socket });
                 }
                 Err(e) => {
                     last_error = Some(e);
+                    socket.deactivate().await?;
                 }
             }
         }
 
+        lte_link.deactivate().await?;
         Err(last_error.take().unwrap())
     }
 

@@ -9,7 +9,7 @@ use futures::task::AtomicWaker;
 ///
 /// This can be nice for example when you have a task that is 'stuck' receiving data that never arrives,
 /// but you want it to stop doing that so it can continue doing something else.
-/// 
+///
 /// It is recommended to create a new token for every operation because once cancelled, the token stays in the cancelled state.
 #[derive(Default)]
 pub struct CancellationToken {
@@ -32,7 +32,8 @@ impl CancellationToken {
         core::future::poll_fn(|cx| {
             self.bind_to_context(cx);
             Poll::Ready(())
-        }).await;
+        })
+        .await;
     }
 
     pub(crate) fn bind_to_context(&self, cx: &Context) {
@@ -40,7 +41,7 @@ impl CancellationToken {
     }
 
     /// Set the token to cancel the operation that uses this token.
-    /// 
+    ///
     /// This may not cancel the task immediately because that may not always be possible.
     pub fn cancel(&self) {
         self.canceled.store(true, Ordering::SeqCst);
@@ -53,7 +54,7 @@ impl CancellationToken {
     }
 
     /// Creates a result of this type to the `?` operator can be used to return from code.
-    /// 
+    ///
     /// It returns an OK if the token hasn't been cancelled yet and an error if it has been cancelled.
     pub(crate) fn as_result(&self) -> Result<(), Error> {
         match self.is_cancelled() {
