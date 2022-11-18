@@ -1,4 +1,6 @@
 #![no_std]
+#![doc = include_str!("../README.md")]
+// #![warn(missing_docs)]
 
 use crate::error::ErrorSource;
 use core::cell::RefCell;
@@ -203,13 +205,19 @@ pub fn ipc_irq_handler() {
 /// Based on: <https://infocenter.nordicsemi.com/index.jsp?topic=%2Fref_at_commands%2FREF%2Fat_commands%2Fmob_termination_ctrl_status%2Fcfun.html>
 #[derive(Debug, Copy, Clone)]
 pub struct SystemMode {
+    /// Enables the modem to connect to the LTE network
     pub lte_support: bool,
+    /// Enables the PowerSavingMode. You want this enabled unless your sim/network doesn't support it
     pub lte_psm_support: bool,
+    /// Enables the modem to connect to the NBiot network
     pub nbiot_support: bool,
+    /// Enables the modem to receive gnss signals
     pub gnss_support: bool,
+    /// Sets up the preference the modem will have for connecting to the mobile network
     pub preference: ConnectionPreference,
 }
 
+/// The preference the modem will have for connecting to the mobile network
 #[derive(Debug, Copy, Clone)]
 pub enum ConnectionPreference {
     /// No preference. Initial system selection is based on history data and Universal Subscriber Identity Module (USIM)

@@ -52,7 +52,7 @@ impl CancellationToken {
     }
 
     /// Restore the token to the non-cancelled state. This can be used so you can reuse the same token multiple times.
-    /// 
+    ///
     /// Calling this may prevent a cancellation, but the cancellation may have already started.
     pub fn restore(&self) {
         self.canceled.store(false, Ordering::SeqCst);
