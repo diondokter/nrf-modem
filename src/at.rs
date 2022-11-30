@@ -109,7 +109,9 @@ pub fn send_at_blocking<const CAP: usize>(command: &str) -> Result<ArrayString<C
             .into_result()?;
         }
 
-        ArrayString::from_byte_string(&buffer).unwrap()
+        let mut return_string = ArrayString::from_byte_string(&buffer).unwrap();
+        strip_null_bytes(&mut return_string);
+        return_string
     } else {
         unsafe {
             nrfxlib_sys::nrf_modem_at_printf(b"%.*s\0".as_ptr(), command.len(), command.as_ptr())
@@ -193,7 +195,10 @@ impl<'c, const CAP: usize> Future for SendATFuture<'c, CAP> {
                         *last = 0
                     }
 
-                    Poll::Ready(Ok(ArrayString::from_byte_string(&self.response).unwrap()))
+                    let mut return_string = ArrayString::from_byte_string(&self.response).unwrap();
+                    strip_null_bytes(&mut return_string);
+
+                    Poll::Ready(Ok(return_string))
                 } else {
                     AT_DATA_WAKER.register(cx.waker());
                     Poll::Pending
@@ -227,4 +232,16 @@ enum SendATState {
     WaitingOnAccess,
     AccessGranted,
     WaitingOnData,
+}
+
+fn strip_null_bytes<const CAP: usize>(string: &mut ArrayString<CAP>) {
+    if let Some((reverse_index, _)) = string
+        .bytes()
+        .rev()
+        .enumerate()
+        .find(|(_, byte)| *byte != 0)
+    {
+        let index = string.len() - reverse_index;
+        string.truncate(index);
+    }
 }
