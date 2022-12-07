@@ -65,7 +65,7 @@ pub enum NrfxErr {
 
 /// Stores the last error from the library. See `nrf_modem_os_errno_set` and
 /// `get_last_error`.
-static LAST_ERROR: core::sync::atomic::AtomicI32 = core::sync::atomic::AtomicI32::new(0);
+static LAST_ERROR: core::sync::atomic::AtomicIsize = core::sync::atomic::AtomicIsize::new(0);
 
 /// Remembers the IPC interrupt context we were given
 static IPC_CONTEXT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
@@ -105,12 +105,12 @@ pub extern "C" fn nrf_modem_os_init() {
 
 /// Function required by BSD library. Stores an error code we can read later.
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_errno_set(errno: i32) {
+pub extern "C" fn nrf_modem_os_errno_set(errno: isize) {
     LAST_ERROR.store(errno, core::sync::atomic::Ordering::SeqCst);
 }
 
 /// Return the last error stored by the nrfxlib C library.
-pub fn get_last_error() -> i32 {
+pub fn get_last_error() -> isize {
     LAST_ERROR.load(core::sync::atomic::Ordering::SeqCst)
 }
 

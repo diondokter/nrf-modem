@@ -101,7 +101,7 @@ pub fn send_at_blocking<const CAP: usize>(command: &str) -> Result<ArrayString<C
         unsafe {
             nrfxlib_sys::nrf_modem_at_cmd(
                 buffer.as_mut_ptr() as _,
-                buffer.len() as u32,
+                buffer.len(),
                 b"%.*s\0".as_ptr(),
                 command.len(),
                 command.as_ptr(),

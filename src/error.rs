@@ -9,7 +9,7 @@ use crate::socket::SocketOptionError;
 pub enum Error {
     ModemNotInitialized,
     GnssAlreadyTaken,
-    NrfError(i32),
+    NrfError(isize),
     BufferTooSmall(Option<usize>),
     OutOfMemory,
     AtParseError(ParseError),
@@ -31,13 +31,22 @@ pub trait ErrorSource {
     fn into_result(self) -> Result<(), Error>;
 }
 
-impl ErrorSource for i32 {
+impl ErrorSource for isize {
     fn into_result(self) -> Result<(), Error> {
         if self == 0 {
             return Ok(());
         }
 
         Err(Error::NrfError(self))
+    }
+}
+impl ErrorSource for i32 {
+    fn into_result(self) -> Result<(), Error> {
+        if self == 0 {
+            return Ok(());
+        }
+
+        Err(Error::NrfError(self as isize))
     }
 }
 

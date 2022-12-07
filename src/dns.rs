@@ -73,7 +73,7 @@ pub async fn get_host_by_name_with_cancellation(
             core::ptr::null(),
             &hints as *const _,
             &mut result as *mut *mut _,
-        );
+        ) as isize;
 
         let deactivation_result = link.deactivate().await;
 
