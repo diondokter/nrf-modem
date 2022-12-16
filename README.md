@@ -8,6 +8,9 @@ It can be used with any executor.
 
 There are a couple of things you must do to be able to use the library.
 
+First of which, make sure to have the `llvm-tools` installed.
+This can be done using `rustup component add llvm-tools-preview`.
+
 ### Nonsecure
 
 Nordic has made it so that the modem can only be used when in the nonsecure context.
