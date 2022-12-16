@@ -11,6 +11,11 @@ There are a couple of things you must do to be able to use the library.
 First of which, make sure to have the `llvm-tools` installed.
 This can be done using `rustup component add llvm-tools-preview`.
 
+The library also needs some `libc` functions.
+The best way to import them is with [tinyrlibc](https://github.com/rust-embedded-community/tinyrlibc).
+As of writing the newest release is `0.3.0`. This version does not include a needed API,
+so it's better to include the latest master branch or any newer released version.
+
 ### Nonsecure
 
 Nordic has made it so that the modem can only be used when in the nonsecure context.
