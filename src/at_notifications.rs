@@ -33,6 +33,9 @@ pub(crate) fn initialize() -> Result<(), Error> {
     Ok(())
 }
 
+/// An async stream of all AT notifications.
+/// 
+/// Implements the [futures::Stream] trait for polling.
 pub struct AtNotificationStream<const CAP: usize, const COUNT: usize> {
     buffer: ArrayVec<ArrayString<CAP>, COUNT>,
     waker_node: Option<WakerNode<dyn NotificationBuffer>>,
@@ -52,7 +55,7 @@ impl<const CAP: usize, const COUNT: usize> AtNotificationStream<CAP, COUNT> {
     }
 
     /// Futures are lazy and can only register themselves once polled.
-    /// Call this function if you want to register this stream so that it can already receive notifications.
+    /// Call this function if you want to register this stream early so that it can already receive notifications.
     pub async fn register(self: core::pin::Pin<&mut Self>) {
         let this = unsafe { self.get_unchecked_mut() };
 

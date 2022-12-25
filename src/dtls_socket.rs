@@ -2,6 +2,7 @@ use crate::{
     dns,
     error::Error,
     socket::{Socket, SocketFamily, SocketOption, SocketProtocol, SocketType, SplitSocketHandle},
+    CancellationToken,
 };
 
 use no_std_net::SocketAddr;
@@ -16,7 +17,16 @@ macro_rules! impl_receive_from {
             &self,
             buf: &'buf mut [u8],
         ) -> Result<(&'buf mut [u8], SocketAddr), Error> {
-            let (received_len, addr) = self.socket().receive_from(buf).await?;
+            self.receive_from_with_cancellation(buf, &Default::default())
+                .await
+        }
+
+        pub async fn receive_from_with_cancellation<'buf>(
+            &self,
+            buf: &'buf mut [u8],
+            token: &CancellationToken,
+        ) -> Result<(&'buf mut [u8], SocketAddr), Error> {
+            let (received_len, addr) = self.socket().receive_from(buf, token).await?;
             Ok((&mut buf[..received_len], addr))
         }
     };
@@ -25,13 +35,43 @@ macro_rules! impl_receive_from {
 macro_rules! impl_send {
     () => {
         pub async fn send(&self, buf: &[u8]) -> Result<(), Error> {
-            self.socket().write(buf).await.map(|_| ())
+            self.send_with_cancellation(buf, &Default::default()).await
+        }
+
+        pub async fn send_with_cancellation(
+            &self,
+            buf: &[u8],
+            token: &CancellationToken,
+        ) -> Result<(), Error> {
+            self.socket().write(buf, token).await.map(|_| ())
         }
     };
 }
 
 impl DtlsSocket {
-    pub async fn new(peer_verify: PeerVerification, security_tags: &[u32]) -> Result<Self, Error> {
+    pub async fn connect(
+        hostname: &str,
+        port: u16,
+        peer_verify: PeerVerification,
+        security_tags: &[u32],
+    ) -> Result<Self, Error> {
+        Self::connect_with_cancellation(
+            hostname,
+            port,
+            peer_verify,
+            security_tags,
+            &Default::default(),
+        )
+        .await
+    }
+
+    pub async fn connect_with_cancellation(
+        hostname: &str,
+        port: u16,
+        peer_verify: PeerVerification,
+        security_tags: &[u32],
+        token: &CancellationToken,
+    ) -> Result<Self, Error> {
         let inner = Socket::create(
             SocketFamily::Ipv4,
             SocketType::Datagram,
@@ -41,20 +81,18 @@ impl DtlsSocket {
         inner.set_option(SocketOption::TlsPeerVerify(peer_verify.as_integer()))?;
         inner.set_option(SocketOption::TlsSessionCache(0))?;
         inner.set_option(SocketOption::TlsTagList(security_tags))?;
+        inner.set_option(SocketOption::TlsHostName(hostname))?;
 
-        Ok(DtlsSocket { inner })
-    }
+        token.as_result()?;
 
-    pub async fn connect(&mut self, hostname: &str, port: u16) -> Result<(), Error> {
-        self.inner.set_option(SocketOption::TlsHostName(hostname))?;
-
-        let ip = dns::get_host_by_name(hostname).await?;
-
+        let ip = dns::get_host_by_name_with_cancellation(hostname, token).await?;
         let addr = SocketAddr::from((ip, port));
 
-        self.inner.connect(addr).await?;
+        unsafe {
+            inner.connect(addr, token).await?;
+        }
 
-        Ok(())
+        Ok(DtlsSocket { inner })
     }
 
     pub fn as_raw_fd(&self) -> i32 {

@@ -1,4 +1,6 @@
 #![cfg_attr(all(not(test), not(feature = "std")), no_std)]
+#![doc = include_str!("../README.md")]
+// #![warn(missing_docs)]
 
 use crate::error::ErrorSource;
 use core::cell::RefCell;
@@ -7,6 +9,7 @@ use linked_list_allocator::Heap;
 
 mod at;
 mod at_notifications;
+mod cancellation;
 mod dns;
 mod dtls_socket;
 mod error;
@@ -24,6 +27,7 @@ pub use nrfxlib_sys;
 
 pub use at::*;
 pub use at_notifications::AtNotificationStream;
+pub use cancellation::CancellationToken;
 pub use dns::*;
 pub use dtls_socket::*;
 pub use error::Error;
@@ -160,6 +164,8 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
     mode.create_at_command(&mut buffer)?;
     at::send_at_bytes::<0>(&buffer).await?;
 
+    mode.setup_psm().await?;
+
     Ok(())
 }
 
@@ -199,12 +205,19 @@ pub fn ipc_irq_handler() {
 /// Based on: <https://infocenter.nordicsemi.com/index.jsp?topic=%2Fref_at_commands%2FREF%2Fat_commands%2Fmob_termination_ctrl_status%2Fcfun.html>
 #[derive(Debug, Copy, Clone)]
 pub struct SystemMode {
+    /// Enables the modem to connect to the LTE network
     pub lte_support: bool,
+    /// Enables the PowerSavingMode. You want this enabled unless your sim/network doesn't support it
+    pub lte_psm_support: bool,
+    /// Enables the modem to connect to the NBiot network
     pub nbiot_support: bool,
+    /// Enables the modem to receive gnss signals
     pub gnss_support: bool,
+    /// Sets up the preference the modem will have for connecting to the mobile network
     pub preference: ConnectionPreference,
 }
 
+/// The preference the modem will have for connecting to the mobile network
 #[derive(Debug, Copy, Clone)]
 pub enum ConnectionPreference {
     /// No preference. Initial system selection is based on history data and Universal Subscriber Identity Module (USIM)
@@ -221,6 +234,9 @@ pub enum ConnectionPreference {
 
 impl SystemMode {
     fn is_valid_config(&self) -> bool {
+        if self.lte_psm_support && !self.lte_support {
+            return false;
+        }
         match self.preference {
             ConnectionPreference::None => true,
             ConnectionPreference::Lte => self.lte_support,
@@ -243,6 +259,19 @@ impl SystemMode {
             .with_int_parameter(self.preference as u8)
             .finish()
             .map_err(|e| Error::BufferTooSmall(Some(e)))
+    }
+
+    async fn setup_psm(&self) -> Result<(), Error> {
+        if self.lte_support {
+            if self.lte_psm_support {
+                // Set Power Saving Mode (PSM)
+                at::send_at::<0>("AT+CPSMS=1").await?;
+            } else {
+                // Turn off PSM
+                at::send_at::<0>("AT+CPSMS=0").await?;
+            }
+        }
+        Ok(())
     }
 }
 

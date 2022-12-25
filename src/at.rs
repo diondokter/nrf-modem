@@ -61,7 +61,12 @@ unsafe extern "C" fn at_callback(resp: *const u8) {
     AT_DATA_WAKER.wake();
 }
 
-/// Send an AT command to the modem
+/// Send an AT command to the modem.
+///
+/// The const `CAP` parameter is the size of the returned response string.
+/// It is ok to set this to 0 you don't need the response.
+///
+/// If the `CAP` is too small to contain the entire response, then the string is simply tuncated.
 pub async fn send_at<const CAP: usize>(command: &str) -> Result<ArrayString<CAP>, Error> {
     SendATFuture {
         state: Default::default(),
@@ -83,7 +88,7 @@ pub async fn send_at_bytes<const CAP: usize>(command: &[u8]) -> Result<ArrayStri
 
 /// Sends a blocking AT command. The non-blocking variants should be preferred, but sometimes it's necessary to
 /// call this in e.g. a drop function.
-/// 
+///
 /// If a capacity of 0 is given, then the command is given in a way where no textual response is gotten.
 /// A capacity of >0 will require you to have a capacity that is big enough to contain the full message.
 /// This is different from the async functions where the message is simply truncated.
@@ -96,7 +101,7 @@ pub fn send_at_blocking<const CAP: usize>(command: &str) -> Result<ArrayString<C
         unsafe {
             nrfxlib_sys::nrf_modem_at_cmd(
                 buffer.as_mut_ptr() as _,
-                buffer.len() as u32,
+                buffer.len(),
                 b"%.*s\0".as_ptr(),
                 command.len(),
                 command.as_ptr(),
@@ -104,7 +109,9 @@ pub fn send_at_blocking<const CAP: usize>(command: &str) -> Result<ArrayString<C
             .into_result()?;
         }
 
-        ArrayString::from_byte_string(&buffer).unwrap()
+        let mut return_string = ArrayString::from_byte_string(&buffer).unwrap();
+        strip_null_bytes(&mut return_string);
+        return_string
     } else {
         unsafe {
             nrfxlib_sys::nrf_modem_at_printf(b"%.*s\0".as_ptr(), command.len(), command.as_ptr())
@@ -184,12 +191,14 @@ impl<'c, const CAP: usize> Future for SendATFuture<'c, CAP> {
                     // The callback was called and we have the response
 
                     // Because we handle with c strings, let's at least make the last byte in the buffer a null character
-                    match self.response.last_mut() {
-                        Some(last) => *last = 0,
-                        None => {}
+                    if let Some(last) = self.response.last_mut() {
+                        *last = 0
                     }
 
-                    Poll::Ready(Ok(ArrayString::from_byte_string(&self.response).unwrap()))
+                    let mut return_string = ArrayString::from_byte_string(&self.response).unwrap();
+                    strip_null_bytes(&mut return_string);
+
+                    Poll::Ready(Ok(return_string))
                 } else {
                     AT_DATA_WAKER.register(cx.waker());
                     Poll::Pending
@@ -223,4 +232,16 @@ enum SendATState {
     WaitingOnAccess,
     AccessGranted,
     WaitingOnData,
+}
+
+fn strip_null_bytes<const CAP: usize>(string: &mut ArrayString<CAP>) {
+    if let Some((reverse_index, _)) = string
+        .bytes()
+        .rev()
+        .enumerate()
+        .find(|(_, byte)| *byte != 0)
+    {
+        let index = string.len() - reverse_index;
+        string.truncate(index);
+    }
 }

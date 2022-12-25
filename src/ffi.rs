@@ -65,7 +65,7 @@ pub enum NrfxErr {
 
 /// Stores the last error from the library. See `nrf_modem_os_errno_set` and
 /// `get_last_error`.
-static LAST_ERROR: core::sync::atomic::AtomicI32 = core::sync::atomic::AtomicI32::new(0);
+static LAST_ERROR: core::sync::atomic::AtomicIsize = core::sync::atomic::AtomicIsize::new(0);
 
 /// Remembers the IPC interrupt context we were given
 static IPC_CONTEXT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
@@ -105,12 +105,12 @@ pub extern "C" fn nrf_modem_os_init() {
 
 /// Function required by BSD library. Stores an error code we can read later.
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_errno_set(errno: i32) {
+pub extern "C" fn nrf_modem_os_errno_set(errno: isize) {
     LAST_ERROR.store(errno, core::sync::atomic::Ordering::SeqCst);
 }
 
 /// Return the last error stored by the nrfxlib C library.
-pub fn get_last_error() -> i32 {
+pub fn get_last_error() -> isize {
     LAST_ERROR.load(core::sync::atomic::Ordering::SeqCst)
 }
 
@@ -247,11 +247,11 @@ pub unsafe extern "C" fn nrfx_ipc_config_load(p_config: *const NrfxIpcConfig) {
     let ipc = &(*nrf9160_pac::IPC_NS::ptr());
 
     for (i, value) in config.send_task_config.iter().enumerate() {
-        ipc.send_cnf[i as usize].write(|w| w.bits(*value));
+        ipc.send_cnf[i].write(|w| w.bits(*value));
     }
 
     for (i, value) in config.receive_event_config.iter().enumerate() {
-        ipc.receive_cnf[i as usize].write(|w| w.bits(*value));
+        ipc.receive_cnf[i].write(|w| w.bits(*value));
     }
 
     ipc.intenset
@@ -292,11 +292,11 @@ pub extern "C" fn nrfx_ipc_uninit() {
     let ipc = unsafe { &(*nrf9160_pac::IPC_NS::ptr()) };
 
     for i in 0..IPC_CONF_NUM {
-        ipc.send_cnf[i as usize].reset();
+        ipc.send_cnf[i].reset();
     }
 
     for i in 0..IPC_CONF_NUM {
-        ipc.receive_cnf[i as usize].reset();
+        ipc.receive_cnf[i].reset();
     }
 
     ipc.intenset.reset();
@@ -374,7 +374,7 @@ unsafe fn generic_free(ptr: *mut u8, heap: &crate::WrappedHeap) {
 /// library, only our interrupt handler code.
 pub unsafe fn nrf_ipc_irq_handler() {
     // Get the information about events that fired this interrupt
-    let events_map = (*nrf9160_pac::IPC_NS::ptr()).intpend.read().bits() as u32;
+    let events_map = (*nrf9160_pac::IPC_NS::ptr()).intpend.read().bits();
 
     // Clear these events
     let mut bitmask = events_map;

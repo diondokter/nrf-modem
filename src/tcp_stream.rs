@@ -1,6 +1,7 @@
 use crate::{
     error::Error,
     socket::{Socket, SocketFamily, SocketProtocol, SocketType, SplitSocketHandle},
+    CancellationToken, LteLink,
 };
 use no_std_net::ToSocketAddrs;
 
@@ -14,23 +15,60 @@ macro_rules! impl_receive {
         /// Try fill the given buffer with the data that has been received. The written part of the
         /// buffer is returned.
         pub async fn receive<'buf>(&self, buf: &'buf mut [u8]) -> Result<&'buf mut [u8], Error> {
+            self.receive_with_cancellation(buf, &Default::default())
+                .await
+        }
+
+        /// Try fill the given buffer with the data that has been received. The written part of the
+        /// buffer is returned.
+        pub async fn receive_with_cancellation<'buf>(
+            &self,
+            buf: &'buf mut [u8],
+            token: &CancellationToken,
+        ) -> Result<&'buf mut [u8], Error> {
             let max_receive_len = 1024.min(buf.len());
             let received_bytes = self
                 .socket()
-                .receive(&mut buf[..max_receive_len])
+                .receive(&mut buf[..max_receive_len], token)
                 .await?;
             Ok(&mut buf[..received_bytes])
         }
-    
+
         /// Fill the entire buffer with data that has been received. This will wait as long as necessary to fill up the
         /// buffer.
-        pub async fn receive_exact(&self, buf: &mut [u8]) -> Result<(), Error> {
+        ///
+        /// If there's an error while receiving, then the error is returned as well as the part of the buffer that was
+        /// partially filled with received data.
+        pub async fn receive_exact<'buf>(
+            &self,
+            buf: &'buf mut [u8],
+        ) -> Result<(), (Error, &'buf mut [u8])> {
+            self.receive_exact_with_cancellation(buf, &Default::default())
+                .await
+        }
+
+        /// Fill the entire buffer with data that has been received. This will wait as long as necessary to fill up the
+        /// buffer.
+        ///
+        /// If there's an error while receiving, then the error is returned as well as the part of the buffer that was
+        /// partially filled with received data.
+        pub async fn receive_exact_with_cancellation<'buf>(
+            &self,
+            buf: &'buf mut [u8],
+            token: &CancellationToken,
+        ) -> Result<(), (Error, &'buf mut [u8])> {
             let mut received_bytes = 0;
-    
+
             while received_bytes < buf.len() {
-                received_bytes += self.receive(&mut buf[received_bytes..]).await?.len();
+                match self
+                    .receive_with_cancellation(&mut buf[received_bytes..], token)
+                    .await
+                {
+                    Ok(received_data) => received_bytes += received_data.len(),
+                    Err(e) => return Err((e.into(), &mut buf[..received_bytes])),
+                }
             }
-    
+
             Ok(())
         }
     };
@@ -40,75 +78,69 @@ macro_rules! impl_write {
     () => {
         /// Write the entire buffer to the stream
         pub async fn write(&self, buf: &[u8]) -> Result<(), Error> {
+            self.write_with_cancellation(buf, &Default::default()).await
+        }
+
+        /// Write the entire buffer to the stream
+        pub async fn write_with_cancellation(
+            &self,
+            buf: &[u8],
+            token: &CancellationToken,
+        ) -> Result<(), Error> {
             let mut written_bytes = 0;
-    
+
             while written_bytes < buf.len() {
                 // We can't write very huge chunks because then the socket can't process it all at once
                 let max_write_len = 1024.min(buf.len() - written_bytes);
                 written_bytes += self
                     .socket()
-                    .write(&buf[written_bytes..][..max_write_len])
+                    .write(&buf[written_bytes..][..max_write_len], token)
                     .await?;
             }
-    
+
             Ok(())
-        }    
+        }
     };
 }
 
 impl TcpStream {
     /// Connect a TCP stream to the given address
     pub async fn connect(addr: impl ToSocketAddrs) -> Result<Self, Error> {
-        let mut last_error = None;
+        Self::connect_with_cancellation(addr, &Default::default()).await
+    }
 
+    /// Connect a TCP stream to the given address
+    pub async fn connect_with_cancellation(
+        addr: impl ToSocketAddrs,
+        token: &CancellationToken,
+    ) -> Result<Self, Error> {
+        let mut last_error = None;
+        let lte_link = LteLink::new().await?;
         let addrs = addr.to_socket_addrs().unwrap();
-        let mut socketv4 = None;
-        let mut socketv6 = None;
 
         for addr in addrs {
-            let socket = match addr {
-                no_std_net::SocketAddr::V4(_) => match socketv4 {
-                    Some(_) => &mut socketv4,
-                    None => {
-                        socketv4 = Some(
-                            Socket::create(
-                                SocketFamily::Ipv4,
-                                SocketType::Stream,
-                                SocketProtocol::Tcp,
-                            )
-                            .await?,
-                        );
-                        &mut socketv4
-                    }
-                },
-                no_std_net::SocketAddr::V6(_) => match socketv6 {
-                    Some(_) => &mut socketv6,
-                    None => {
-                        socketv6 = Some(
-                            Socket::create(
-                                SocketFamily::Ipv6,
-                                SocketType::Stream,
-                                SocketProtocol::Tcp,
-                            )
-                            .await?,
-                        );
-                        &mut socketv6
-                    }
-                },
+            token.as_result()?;
+
+            let family = match addr {
+                no_std_net::SocketAddr::V4(_) => SocketFamily::Ipv4,
+                no_std_net::SocketAddr::V6(_) => SocketFamily::Ipv6,
             };
 
-            match socket.as_mut().unwrap().connect(addr).await {
+            let socket = Socket::create(family, SocketType::Stream, SocketProtocol::Tcp).await?;
+
+            match unsafe { socket.connect(addr, token).await } {
                 Ok(_) => {
-                    return Ok(TcpStream {
-                        inner: socket.take().unwrap(),
-                    })
+                    lte_link.deactivate().await?;
+                    return Ok(TcpStream { inner: socket });
                 }
                 Err(e) => {
                     last_error = Some(e);
+                    socket.deactivate().await?;
                 }
             }
         }
 
+        lte_link.deactivate().await?;
         Err(last_error.take().unwrap())
     }
 
@@ -127,7 +159,9 @@ impl TcpStream {
 
         (
             OwnedTcpReadStream { stream: read_split },
-            OwnedTcpWriteStream { stream: write_split },
+            OwnedTcpWriteStream {
+                stream: write_split,
+            },
         )
     }
 
@@ -150,6 +184,7 @@ impl TcpStream {
     }
 }
 
+/// A borrowed read half of a TCP stream
 pub struct TcpReadStream<'a> {
     stream: &'a TcpStream,
 }
@@ -162,6 +197,7 @@ impl<'a> TcpReadStream<'a> {
     impl_receive!();
 }
 
+/// A borrowed write half of a TCP stream
 pub struct TcpWriteStream<'a> {
     stream: &'a TcpStream,
 }
@@ -174,6 +210,7 @@ impl<'a> TcpWriteStream<'a> {
     impl_write!();
 }
 
+/// An owned read half of a TCP stream
 pub struct OwnedTcpReadStream {
     stream: SplitSocketHandle,
 }
@@ -193,6 +230,7 @@ impl OwnedTcpReadStream {
     }
 }
 
+/// An owned write half of a TCP stream
 pub struct OwnedTcpWriteStream {
     stream: SplitSocketHandle,
 }
