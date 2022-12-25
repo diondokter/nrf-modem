@@ -39,6 +39,9 @@ unsafe extern "C" fn gnss_callback(event: i32) {
     GNSS_WAKER.wake();
 }
 
+/// A GNSS objects that controls the GPS of the modem.
+/// 
+/// There can only be one instance at a time.
 pub struct Gnss {}
 
 impl Gnss {
@@ -74,7 +77,7 @@ impl Gnss {
         mut self,
         config: GnssConfig,
         timeout_seconds: u16,
-    ) -> Result<GnssDataIter, Error> {
+    ) -> Result<GnssStream, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -95,10 +98,10 @@ impl Gnss {
             nrfxlib_sys::nrf_modem_gnss_start();
         }
 
-        Ok(GnssDataIter::new(true, self))
+        Ok(GnssStream::new(true, self))
     }
 
-    pub fn start_continuous_fix(mut self, config: GnssConfig) -> Result<GnssDataIter, Error> {
+    pub fn start_continuous_fix(mut self, config: GnssConfig) -> Result<GnssStream, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -120,14 +123,14 @@ impl Gnss {
             nrfxlib_sys::nrf_modem_gnss_start();
         }
 
-        Ok(GnssDataIter::new(false, self))
+        Ok(GnssStream::new(false, self))
     }
 
     pub fn start_periodic_fix(
         mut self,
         config: GnssConfig,
         period_seconds: u16,
-    ) -> Result<GnssDataIter, Error> {
+    ) -> Result<GnssStream, Error> {
         #[cfg(feature = "defmt")]
         defmt::trace!("Setting single fix");
 
@@ -149,7 +152,7 @@ impl Gnss {
             nrfxlib_sys::nrf_modem_gnss_start();
         }
 
-        Ok(GnssDataIter::new(false, self))
+        Ok(GnssStream::new(false, self))
     }
 
     fn apply_config(&mut self, config: GnssConfig) -> Result<(), Error> {
@@ -394,10 +397,14 @@ enum GnssDataType {
     Agps = nrfxlib_sys::NRF_MODEM_GNSS_DATA_AGPS_REQ,
 }
 
+/// An enum containing all possible GNSS data types
 #[derive(Debug, Clone)]
 pub enum GnssData {
+    /// A PVT value
     PositionVelocityTime(nrfxlib_sys::nrf_modem_gnss_pvt_data_frame),
+    /// An NMEA string
     Nmea(ArrayString<83>),
+    /// An assisted gps data frame
     Agps(nrfxlib_sys::nrf_modem_gnss_agps_data_frame),
 }
 
@@ -458,13 +465,16 @@ impl GnssData {
     }
 }
 
-pub struct GnssDataIter {
+/// An async stream of gnss data.
+/// 
+/// Implements the [futures::Stream] trait for polling.
+pub struct GnssStream {
     single_fix: bool,
     done: bool,
     gnss: Option<Gnss>,
 }
 
-impl GnssDataIter {
+impl GnssStream {
     fn new(single_fix: bool, gnss: Gnss) -> Self {
         GNSS_NOTICED_EVENTS.store(0, Ordering::SeqCst);
         Self {
@@ -474,12 +484,13 @@ impl GnssDataIter {
         }
     }
 
+    /// Get back the gnss instance
     pub fn free(mut self) -> Gnss {
         self.gnss.take().unwrap()
     }
 }
 
-impl Stream for GnssDataIter {
+impl Stream for GnssStream {
     type Item = Result<GnssData, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -542,7 +553,7 @@ impl Stream for GnssDataIter {
     }
 }
 
-impl Drop for GnssDataIter {
+impl Drop for GnssStream {
     fn drop(&mut self) {
         if !self.done {
             unsafe {

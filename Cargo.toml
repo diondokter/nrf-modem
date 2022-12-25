@@ -7,7 +7,7 @@ rust-version = "1.64"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nrfxlib-sys = { git = "https://github.com/nrf-rs/nrfxlib-sys.git", rev = "3b79ee37d4074d62bbf0272fa1a0579a7479aad1" }
+nrfxlib-sys = "2.1.0"
 futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
 num_enum = { version = "0.5.7", default-features = false }
 defmt = { version = "0.3.2", optional = true }

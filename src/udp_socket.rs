@@ -136,6 +136,7 @@ impl UdpSocket {
     }
 }
 
+/// A borrowed receive half of a udp socket
 pub struct UdpReceiveSocket<'a> {
     socket: &'a UdpSocket,
 }
@@ -148,6 +149,7 @@ impl<'a> UdpReceiveSocket<'a> {
     impl_receive_from!();
 }
 
+/// A borrowed send half of a udp socket
 pub struct UdpSendSocket<'a> {
     socket: &'a UdpSocket,
 }
@@ -160,6 +162,7 @@ impl<'a> UdpSendSocket<'a> {
     impl_send_to!();
 }
 
+/// An owned receive half of a udp socket
 pub struct OwnedUdpReceiveSocket {
     socket: SplitSocketHandle,
 }
@@ -179,6 +182,7 @@ impl OwnedUdpReceiveSocket {
     }
 }
 
+/// An owned send half of a udp socket
 pub struct OwnedUdpSendSocket {
     socket: SplitSocketHandle,
 }

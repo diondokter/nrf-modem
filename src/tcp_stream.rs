@@ -184,6 +184,7 @@ impl TcpStream {
     }
 }
 
+/// A borrowed read half of a TCP stream
 pub struct TcpReadStream<'a> {
     stream: &'a TcpStream,
 }
@@ -196,6 +197,7 @@ impl<'a> TcpReadStream<'a> {
     impl_receive!();
 }
 
+/// A borrowed write half of a TCP stream
 pub struct TcpWriteStream<'a> {
     stream: &'a TcpStream,
 }
@@ -208,6 +210,7 @@ impl<'a> TcpWriteStream<'a> {
     impl_write!();
 }
 
+/// An owned read half of a TCP stream
 pub struct OwnedTcpReadStream {
     stream: SplitSocketHandle,
 }
@@ -227,6 +230,7 @@ impl OwnedTcpReadStream {
     }
 }
 
+/// An owned write half of a TCP stream
 pub struct OwnedTcpWriteStream {
     stream: SplitSocketHandle,
 }
