@@ -59,6 +59,7 @@ Now it's time to initialize the library. Here you can make a selection for the c
 ```rust,ignore
 nrf_modem::init(SystemMode {
     lte_support: true,
+    lte_psm_support: true,
     nbiot_support: true,
     gnss_support: true,
     preference: ConnectionPreference::None,
