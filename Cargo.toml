@@ -8,7 +8,7 @@ description = "Async modem api for the nRF9160"
 homepage = "https://github.com/diondokter/nrf-modem"
 repository = "https://github.com/diondokter/nrf-modem"
 readme = "README.md"
-keywords = ["nRF9160", "modem", "LTE", "GPS", "NB-IoT", "embedded"]
+keywords = ["nRF9160", "LTE", "GPS", "NB-IoT", "embedded"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
