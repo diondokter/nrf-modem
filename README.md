@@ -1,5 +1,7 @@
 # nRF-Modem
 
+[![crates.io](https://img.shields.io/crates/v/nrf-modem.svg)](https://crates.io/crates/nrf-modem) [![Documentation](https://docs.rs/nrf-modem/badge.svg)](https://docs.rs/nrf-modem)
+
 This is a library that provides a high-level async API for the nRF9160 modem.
 
 It can be used with any executor.
