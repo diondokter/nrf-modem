@@ -34,7 +34,7 @@ pub(crate) fn initialize() -> Result<(), Error> {
 }
 
 /// An async stream of all AT notifications.
-/// 
+///
 /// Implements the [futures::Stream] trait for polling.
 pub struct AtNotificationStream<const CAP: usize, const COUNT: usize> {
     buffer: ArrayVec<ArrayString<CAP>, COUNT>,

@@ -231,7 +231,8 @@ impl Socket {
 
             // Do the bind call, this is non-blocking due to the socket setup
             let mut bind_result =
-                unsafe { nrfxlib_sys::nrf_bind(self.fd, address.as_ptr(), address.size() as u32) } as isize;
+                unsafe { nrfxlib_sys::nrf_bind(self.fd, address.as_ptr(), address.size() as u32) }
+                    as isize;
 
             const NRF_EINPROGRESS: isize = nrfxlib_sys::NRF_EINPROGRESS as isize;
             const NRF_EALREADY: isize = nrfxlib_sys::NRF_EALREADY as isize;
