@@ -40,7 +40,7 @@ unsafe extern "C" fn gnss_callback(event: i32) {
 }
 
 /// A GNSS objects that controls the GPS of the modem.
-/// 
+///
 /// There can only be one instance at a time.
 pub struct Gnss {}
 
@@ -319,7 +319,7 @@ pub struct GnssUsecase {
     /// The error in position calculation can be larger than in normal accuracy mode.
     /// In addition, GNSS might only use three satellites to determine a fix,
     /// while in normal accuracy mode at least four satellites are used.
-    low_accuracy: bool,
+    pub low_accuracy: bool,
     /// Disable scheduled downloads.
     ///
     /// By default, in periodic navigation mode, when GNSS determines it needs to download ephemerides or almanacs from the broadcast,
@@ -330,7 +330,7 @@ pub struct GnssUsecase {
     /// This is recommended when A-GPS is used to supply assistance data to the GNSS.
     /// It is also possible to use this option without A-GPS, but it should be noted that in that case GNSS will never get some data (for example ionospheric corrections),
     /// which may affect the accuracy.
-    scheduled_downloads_disable: bool,
+    pub scheduled_downloads_disable: bool,
 }
 
 impl Default for GnssUsecase {
@@ -466,7 +466,7 @@ impl GnssData {
 }
 
 /// An async stream of gnss data.
-/// 
+///
 /// Implements the [futures::Stream] trait for polling.
 pub struct GnssStream {
     single_fix: bool,
