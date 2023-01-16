@@ -5,7 +5,8 @@ use crate::{
 
 use core::fmt::Write;
 use core::write;
-use heapless::{String, Vec};
+//use heapless::{String, Vec};
+use arrayvec::{ArrayString, ArrayVec};
 
 // ASCII table for coverting ASCII to GSM 7 bit
 // Copied from https://github.com/nrfconnect/sdk-nrf/blob/main/lib/sms/string_conversion.c#L36
@@ -68,12 +69,13 @@ impl<'a> Sms<'a> {
     }
     // Encode number in the way modem expect it
     // Reimplement from https://github.com/nrfconnect/sdk-nrf/blob/main/lib/sms/sms_submit.c#L46
-    fn encode_number(number: &str) -> Result<String<15>, Error> {
-        let mut encoded_number = String::from(number.trim_start_matches("+"));
+    fn encode_number(number: &str) -> Result<ArrayString<15>, Error> {
+        let mut encoded_number = ArrayString::from(number.trim_start_matches("+"))
+            .map_err(|_| Error::BufferTooSmall(None))?;
 
         if encoded_number.len() % 2 != 0 {
             encoded_number
-                .push('F')
+                .try_push('F')
                 .map_err(|_| Error::BufferTooSmall(None))?;
         }
 
@@ -93,22 +95,22 @@ impl<'a> Sms<'a> {
     }
     // Convert a ASCII string to GSM 7bit
     // Reimplement from https://github.com/nrfconnect/sdk-nrf/blob/main/lib/sms/string_conversion.c#L162
-    fn ascii_to_gsm7bit<const N: usize>(text: &str) -> Result<String<N>, Error> {
-        let mut encoded_message = String::new();
+    fn ascii_to_gsm7bit<const N: usize>(text: &str) -> Result<ArrayString<N>, Error> {
+        let mut encoded_message = ArrayString::new();
 
         for c in text.chars() {
             if c.is_ascii() {
                 let char_7bit = ASCII_TO_7BIT_TABLE[c as usize];
                 if char_7bit & STR_7BIT_ESCAPE_IND == 0 {
                     encoded_message
-                        .push(char_7bit as char)
+                        .try_push(char_7bit as char)
                         .map_err(|_| Error::BufferTooSmall(None))?;
                 } else {
                     encoded_message
-                        .push(STR_7BIT_ESCAPE_CODE as char)
+                        .try_push(STR_7BIT_ESCAPE_CODE as char)
                         .map_err(|_| Error::BufferTooSmall(None))?;
                     encoded_message
-                        .push((char_7bit & STR_7BIT_CODE_MASK) as char)
+                        .try_push((char_7bit & STR_7BIT_CODE_MASK) as char)
                         .map_err(|_| Error::BufferTooSmall(None))?;
                 }
             }
@@ -118,12 +120,13 @@ impl<'a> Sms<'a> {
     }
     // Pack a GSM 7 bit strings into 7 bites without 1 bit padding
     // Reimplement from https://github.com/nrfconnect/sdk-nrf/blob/main/lib/sms/string_conversion.c#L294
-    fn pack_gsm7bit<const N: usize>(text: String<N>) -> Vec<u8, N> {
+    fn pack_gsm7bit<const N: usize>(text: ArrayString<N>) -> ArrayVec<u8, N> {
         let mut src: usize = 0;
         let mut dst: usize = 0;
         let mut shift: usize = 0;
         let len = text.len();
-        let mut bytes = text.into_bytes();
+        let mut bytes: ArrayVec<u8, N> = ArrayVec::new();
+        bytes.try_extend_from_slice(text.as_bytes()).unwrap();
 
         while src < len {
             bytes[dst] = bytes[src] >> shift;
@@ -147,6 +150,9 @@ impl<'a> Sms<'a> {
     pub async fn send<const N: usize>(self) -> Result<(), Error> {
         let encoded_number = Self::encode_number(self.number)?;
 
+        #[cfg(feature = "defmt")]
+        defmt::trace!("message.len(): {}", self.message.len());
+
         let encoded_message = Self::pack_gsm7bit(Self::ascii_to_gsm7bit::<N>(self.message)?);
 
         let size = 2 + /* First header byte and TP-MR fields */
@@ -157,7 +163,7 @@ impl<'a> Sms<'a> {
 		1 + /* TP-UDL field */
 		encoded_message.len();
 
-        let mut at_cmgs: String<N> = String::new();
+        let mut at_cmgs: ArrayString<N> = ArrayString::new();
         let mut encoded_number_len = encoded_number.len();
         if self.number.trim_start_matches('+').len() % 2 != 0 {
             encoded_number_len -= 1;
@@ -190,8 +196,10 @@ impl<'a> Sms<'a> {
         }
 
         // Send the SMS
+        let result = send_at::<18>(&at_cmgs).await?;
+
         lte_link.deactivate().await?;
-        if send_at::<6>(&at_cmgs).await?.ends_with("OK\r\n") {
+        if result.ends_with("OK\r\n") {
             Ok(())
         } else {
             Err(Error::UnexpectedAtResponse)

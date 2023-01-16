@@ -25,9 +25,8 @@ at-commands = "0.5.2"
 no-std-net = "0.6.0"
 critical-section = "1.1"
 embedded-io = { version = "0.4.0", features = ["async"] }
-heapless = { version = "0.7.16", optional = true }
 
 [features]
 default = []
 defmt = ["dep:defmt", "at-commands/defmt"]
-sms = ["heapless"]
+sms = []
