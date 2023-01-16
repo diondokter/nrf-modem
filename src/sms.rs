@@ -185,17 +185,15 @@ impl<'a> Sms<'a> {
 
         // Configure the SMS parameters in modem
         // This might need some rework when reciving SMS is add and reporting
-        if send_at::<64>("AT+CNMI=3,2,0,1").await?.as_str() != "OK\r\n" {
+        if send_at::<6>("AT+CNMI=3,2,0,1").await?.as_str() != "OK\r\n" {
             return Err(Error::UnexpectedAtResponse);
         }
 
         // Send the SMS
-        let at_response = send_at::<64>(&at_cmgs).await?;
-        if at_response.ends_with("OK\r\n") {
-            lte_link.deactivate().await?;
+        lte_link.deactivate().await?;
+        if send_at::<6>(&at_cmgs).await?.ends_with("OK\r\n") {
             Ok(())
         } else {
-            lte_link.deactivate().await?;
             Err(Error::UnexpectedAtResponse)
         }
     }
