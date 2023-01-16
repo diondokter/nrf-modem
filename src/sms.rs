@@ -143,7 +143,8 @@ impl<'a> Sms<'a> {
     }
     /// Sends the craftes message
     /// `N` is need to provide internal buffer size for message and number encoding. Needs to be at least 2 * message.len() + 34
-    pub async fn send<const N: usize>(self) -> Result<(), Error> {
+    /// The default and max value need for `N` is 354
+    pub async fn send<const N: usize = 354>(self) -> Result<(), Error> {
         let encoded_number = Self::encode_number(self.number)?;
 
         let encoded_message = Self::pack_gsm7bit(Self::ascii_to_gsm7bit::<N>(self.message)?);
