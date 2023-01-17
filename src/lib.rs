@@ -17,7 +17,6 @@ pub mod ffi;
 mod gnss;
 pub(crate) mod ip;
 mod lte_link;
-#[cfg(feature = "sms")]
 mod sms;
 pub(crate) mod socket;
 mod tcp_stream;
@@ -35,7 +34,6 @@ pub use dtls_socket::*;
 pub use error::Error;
 pub use gnss::*;
 pub use lte_link::LteLink;
-#[cfg(feature = "sms")]
 pub use sms::*;
 pub use tcp_stream::*;
 pub use udp_socket::*;

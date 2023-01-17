@@ -29,4 +29,3 @@ embedded-io = { version = "0.4.0", features = ["async"] }
 [features]
 default = []
 defmt = ["dep:defmt", "at-commands/defmt"]
-sms = []
