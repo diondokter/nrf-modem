@@ -1,7 +1,6 @@
 #![no_std]
 #![doc = include_str!("../README.md")]
 // #![warn(missing_docs)]
-#![cfg_attr(feature = "sms", feature(array_chunks))]
 
 use crate::error::ErrorSource;
 use core::cell::RefCell;

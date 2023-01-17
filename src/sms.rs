@@ -70,25 +70,30 @@ impl<'a> Sms<'a> {
     // Encode number in the way modem expect it
     // Reimplement from https://github.com/nrfconnect/sdk-nrf/blob/main/lib/sms/sms_submit.c#L46
     fn encode_number(number: &str) -> Result<ArrayString<15>, Error> {
-        let mut encoded_number = ArrayString::from(number.trim_start_matches("+"))
+        let mut number: ArrayString<15> = ArrayString::from(number.trim_start_matches("+"))
             .map_err(|_| Error::BufferTooSmall(None))?;
 
-        if encoded_number.len() % 2 != 0 {
-            encoded_number
+        if number.len() % 2 != 0 {
+            number
                 .try_push('F')
                 .map_err(|_| Error::BufferTooSmall(None))?;
         }
 
         if number.is_ascii() {
-            // Since we are checking if the number of characters is even before this unsafe
-            // and we only allow ASCII chars doing this swap shouldn't have any UB
-            unsafe {
-                for c in encoded_number.as_bytes_mut().array_chunks_mut::<2>() {
-                    c.swap(0, 1);
-                }
-            }
+            let mut swapped_number = ArrayString::from_byte_string(
+                &number
+                    .as_bytes()
+                    .chunks(2)
+                    .flat_map(|c| [c[1], c[0]])
+                    .chain((0..15 - number.len()).into_iter().map(|_| 0))
+                    .collect::<ArrayVec<u8, 15>>()
+                    .into_inner()
+                    .unwrap(),
+            )
+            .unwrap();
+            swapped_number.truncate(number.len());
 
-            Ok(encoded_number)
+            Ok(swapped_number)
         } else {
             Err(Error::SmsNumberNotAscii)
         }
@@ -148,10 +153,10 @@ impl<'a> Sms<'a> {
     /// `N` is need to provide internal buffer size for message and number encoding. Needs to be at least 2 * message.len() + 34
     /// Max ever need value for the buffer should be not more then 354 bytes
     pub async fn send<const N: usize>(self) -> Result<(), Error> {
-        let encoded_number = Self::encode_number(self.number)?;
+        let encoded_number = Self::encode_number(self.number).unwrap();
 
         #[cfg(feature = "defmt")]
-        defmt::trace!("message.len(): {}", self.message.len());
+        defmt::trace!("encoded_number: {}", encoded_number.as_str());
 
         let encoded_message = Self::pack_gsm7bit(Self::ascii_to_gsm7bit::<N>(self.message)?);
 
@@ -185,9 +190,15 @@ impl<'a> Sms<'a> {
         // End character
         write!(&mut at_cmgs, "\x1A").map_err(|_| Error::BufferTooSmall(None))?;
 
+        #[cfg(feature = "defmt")]
+        defmt::trace!("at_cmgs: {:?}", at_cmgs.as_str());
+
         // Wait for LteLink to send the message
         let lte_link = LteLink::new().await?;
         lte_link.wait_for_link().await?;
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("link found");
 
         // Configure the SMS parameters in modem
         // This might need some rework when reciving SMS is add and reporting
@@ -197,6 +208,9 @@ impl<'a> Sms<'a> {
 
         // Send the SMS
         let result = send_at::<18>(&at_cmgs).await?;
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!("result: {}", result.as_str());
 
         lte_link.deactivate().await?;
         if result.ends_with("OK\r\n") {
