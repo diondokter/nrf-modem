@@ -4,6 +4,7 @@
 
 - UICC is now disabled when the LTE is disabled to save on power.
 - The error enum is no non-exhaustive
+- Added the ability to send SMS messages (https://github.com/diondokter/nrf-modem/pull/9)
 
 ## 0.1.1 (26-12-23)
 
