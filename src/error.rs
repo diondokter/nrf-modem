@@ -6,6 +6,7 @@ use crate::socket::SocketOptionError;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum Error {
     ModemNotInitialized,
     GnssAlreadyTaken,

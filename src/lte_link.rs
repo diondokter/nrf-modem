@@ -153,6 +153,8 @@ impl LteLink {
         if ACTIVE_LINKS.fetch_sub(1, Ordering::SeqCst) == 1 {
             // Turn off the network side of the modem
             crate::at::send_at::<0>("AT+CFUN=20").await?;
+            // Turn off the UICC
+            crate::at::send_at::<0>("AT+CFUN=40").await?;
         }
 
         Ok(())
@@ -170,6 +172,9 @@ impl Drop for LteLink {
             // Turn off the network side of the modem
             // We need to send this blocking because we don't have async drop yet
             crate::at::send_at_blocking::<0>("AT+CFUN=20").unwrap();
+            // Turn off the UICC
+            // We need to send this blocking because we don't have async drop yet
+            crate::at::send_at_blocking::<0>("AT+CFUN=40").unwrap();
         }
     }
 }
