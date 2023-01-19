@@ -17,6 +17,7 @@ pub mod ffi;
 mod gnss;
 pub(crate) mod ip;
 mod lte_link;
+mod sms;
 pub(crate) mod socket;
 mod tcp_stream;
 mod udp_socket;
@@ -33,6 +34,7 @@ pub use dtls_socket::*;
 pub use error::Error;
 pub use gnss::*;
 pub use lte_link::LteLink;
+pub use sms::*;
 pub use tcp_stream::*;
 pub use udp_socket::*;
 

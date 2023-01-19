@@ -26,6 +26,7 @@ pub enum Error {
     SocketOptionError(SocketOptionError),
     /// The ongoing operation has been cancelled by the user
     OperationCancelled,
+    SmsNumberNotAscii,
 }
 
 pub trait ErrorSource {
