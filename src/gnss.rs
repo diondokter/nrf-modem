@@ -173,6 +173,8 @@ impl Gnss {
 impl Drop for Gnss {
     fn drop(&mut self) {
         unsafe {
+            #[cfg(feature = "defmt")]
+            defmt::debug!("Disabling gnss");
             nrfxlib_sys::nrf_modem_at_printf(b"AT+CFUN=30".as_ptr());
         }
 
@@ -555,13 +557,11 @@ impl Stream for GnssStream {
 
 impl Drop for GnssStream {
     fn drop(&mut self) {
-        if !self.done {
-            unsafe {
-                #[cfg(feature = "defmt")]
-                defmt::debug!("Stopping gnss");
+        unsafe {
+            #[cfg(feature = "defmt")]
+            defmt::debug!("Stopping gnss");
 
-                nrfxlib_sys::nrf_modem_gnss_stop();
-            }
+            nrfxlib_sys::nrf_modem_gnss_stop();
         }
     }
 }
