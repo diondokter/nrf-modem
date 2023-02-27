@@ -1,12 +1,6 @@
-use crate::{
-    error::{Error, ErrorSource},
-    send_at, LteLink,
-};
-
-use core::fmt::Write;
-use core::write;
-//use heapless::{String, Vec};
+use crate::{error::Error, send_at, LteLink};
 use arrayvec::{ArrayString, ArrayVec};
+use core::{fmt::Write, write};
 
 // ASCII table for coverting ASCII to GSM 7 bit
 // Copied from https://github.com/nrfconnect/sdk-nrf/blob/main/lib/sms/string_conversion.c#L36

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (27-02-23)
+
+- Stop gnss when GnssStream is dropped (https://github.com/diondokter/nrf-modem/pull/11)
+
 ## 0.2.0 (19-01-23)
 
 - UICC is now disabled when the LTE is disabled to save on power.
