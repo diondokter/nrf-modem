@@ -185,12 +185,6 @@ pub fn application_irq_handler() {
     unsafe {
         nrfxlib_sys::nrf_modem_application_irq_handler();
         nrfxlib_sys::nrf_modem_os_event_notify();
-        // Wake up all the waiting sockets
-        critical_section::with(|cs| {
-            crate::socket::WAKER_NODE_LIST
-                .borrow_ref_mut(cs)
-                .wake_all_and_reset(|_| {})
-        });
     }
 }
 
@@ -199,6 +193,7 @@ pub fn ipc_irq_handler() {
     unsafe {
         crate::ffi::nrf_ipc_irq_handler();
         nrfxlib_sys::nrf_modem_os_event_notify();
+        crate::socket::wake_sockets();
     }
 }
 

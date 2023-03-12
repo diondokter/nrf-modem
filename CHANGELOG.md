@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2 (12-03-23)
+
+- Sockets are now waken up from IPC interrupts instead of APP interrupts. This makes it so the wakers are only woken ~62% of the times in the previous version
+- Sockets now have a fixed amount of wakers, which makes some perf better and uses less sketchy unsafe code. This replaces the previously used intrusive linked list.
+- Added some disconnect detection on sockets. This is one of the new errors a socket can return. Previously a receive call would just return 0 bytes being read.
+
 ## 0.2.1 (27-02-23)
 
 - Stop gnss when GnssStream is dropped (https://github.com/diondokter/nrf-modem/pull/11)

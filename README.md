@@ -18,6 +18,10 @@ The best way to import them is with [tinyrlibc](https://github.com/rust-embedded
 As of writing the newest release is `0.3.0`. This version does not include a needed API,
 so it's better to include the latest master branch or any newer released version.
 
+This library has been tested with modem firmware version `1.3.4` but might work with earlier versions.
+When this library starts to require a newer version, then that will be seen as a breaking change.
+But it's easy to miss something, so this is a 'best effort' guarantee only.
+
 ### Nonsecure
 
 Nordic has made it so that the modem can only be used when in the nonsecure context.

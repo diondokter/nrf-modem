@@ -1,26 +1,62 @@
 use crate::{
-    error::Error,
-    ffi::get_last_error,
-    ip::NrfSockAddr,
-    lte_link::LteLink,
-    waker_node_list::{WakerNode, WakerNodeList},
-    CancellationToken,
+    error::Error, ffi::get_last_error, ip::NrfSockAddr, lte_link::LteLink, CancellationToken,
 };
 use core::{
     cell::RefCell,
-    future::Future,
-    marker::PhantomData,
     ops::{Deref, Neg},
     sync::atomic::{AtomicU8, Ordering},
-    task::Poll,
+    task::{Poll, Waker},
 };
 use critical_section::Mutex;
 use no_std_net::SocketAddr;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-/// A list of waker nodes that are waiting for a socket interrupt
-pub(crate) static WAKER_NODE_LIST: Mutex<RefCell<WakerNodeList<()>>> =
-    Mutex::new(RefCell::new(WakerNodeList::new()));
+const WAKER_INIT: Option<(Waker, i32)> = None;
+static SOCKET_WAKERS: Mutex<
+    RefCell<[Option<(Waker, i32)>; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize]>,
+> = Mutex::new(RefCell::new(
+    [WAKER_INIT; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize],
+));
+
+pub(crate) fn wake_sockets() {
+    critical_section::with(|cs| {
+        SOCKET_WAKERS
+            .borrow_ref_mut(cs)
+            .iter_mut()
+            .for_each(|waker| {
+                if let Some((waker, _)) = waker.take() {
+                    waker.wake()
+                }
+            })
+    });
+}
+
+fn register_socket_waker(waker: Waker, socket_fd: i32) {
+    critical_section::with(|cs| {
+        // Get the wakers
+        let mut wakers = SOCKET_WAKERS.borrow_ref_mut(cs);
+
+        // Search for an empty spot or a spot that already stores the waker for the socket
+        let empty_waker = wakers
+            .iter_mut()
+            .find(|waker| waker.is_none() || waker.as_ref().map(|(_, fd)| *fd) == Some(socket_fd));
+
+        if let Some(empty_waker) = empty_waker {
+            // In principle we should always have an empty spot and run this code
+            *empty_waker = Some((waker, socket_fd));
+        } else {
+            // It shouldn't ever happen, but if there's no empty spot, we just evict the first socket
+            // That socket will just reregister itself
+            wakers
+                .first_mut()
+                .unwrap()
+                .replace((waker, socket_fd))
+                .unwrap()
+                .0
+                .wake();
+        }
+    });
+}
 
 /// Internal socket implementation
 #[derive(Debug)]
@@ -50,6 +86,10 @@ impl Socket {
             s_type as u32 as i32,
             protocol as u32 as i32
         );
+
+        if unsafe { !nrfxlib_sys::nrf_modem_is_initialized() } {
+            return Err(Error::ModemNotInitialized);
+        }
 
         // Let's activate the modem
         let link = LteLink::new().await?;
@@ -144,8 +184,7 @@ impl Socket {
             .wait_for_link_with_cancellation(token)
             .await?;
 
-        // Dive into the non-blocking C API, so we connect in a socket future
-        SocketFuture::new(|| {
+        core::future::poll_fn(|cx| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Connecting socket {}", self.fd);
 
@@ -155,6 +194,8 @@ impl Socket {
 
             // Cast the address to something the nrf-modem understands
             let address = NrfSockAddr::from(address);
+
+            register_socket_waker(cx.waker().clone(), self.fd);
 
             // Do the connect call, this is non-blocking due to the socket setup
             let mut connect_result = unsafe {
@@ -217,8 +258,7 @@ impl Socket {
             .wait_for_link_with_cancellation(token)
             .await?;
 
-        // Dive into the non-blocking C API, so we connect in a socket future
-        SocketFuture::new(|| {
+        core::future::poll_fn(|cx| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Binding socket {}", self.fd);
 
@@ -228,6 +268,8 @@ impl Socket {
 
             // Cast the address to something the nrf-modem understands
             let address = NrfSockAddr::from(address);
+
+            register_socket_waker(cx.waker().clone(), self.fd);
 
             // Do the bind call, this is non-blocking due to the socket setup
             let mut bind_result =
@@ -261,16 +303,19 @@ impl Socket {
         Ok(())
     }
 
+    /// Call the [nrfxlib_sys::nrf_send] in an async fashion
     pub async fn write(&self, buffer: &[u8], token: &CancellationToken) -> Result<usize, Error> {
         token.bind_to_current_task().await;
 
-        SocketFuture::new(|| {
+        core::future::poll_fn(|cx| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Sending with socket {}", self.fd);
 
             if token.is_cancelled() {
                 return Poll::Ready(Err(Error::OperationCancelled));
             }
+
+            register_socket_waker(cx.waker().clone(), self.fd);
 
             let mut send_result = unsafe {
                 nrfxlib_sys::nrf_send(self.fd, buffer.as_ptr() as *const _, buffer.len(), 0)
@@ -286,6 +331,7 @@ impl Socket {
             const NRF_EWOULDBLOCK: isize = -(nrfxlib_sys::NRF_EWOULDBLOCK as isize);
 
             match send_result {
+                0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
                 bytes_sent @ 0.. => Poll::Ready(Ok(bytes_sent as usize)),
                 NRF_EWOULDBLOCK => Poll::Pending,
                 error => Poll::Ready(Err(Error::NrfError(error))),
@@ -294,6 +340,7 @@ impl Socket {
         .await
     }
 
+    /// Call the [nrfxlib_sys::nrf_recv] in an async fashion
     pub async fn receive(
         &self,
         buffer: &mut [u8],
@@ -301,13 +348,15 @@ impl Socket {
     ) -> Result<usize, Error> {
         token.bind_to_current_task().await;
 
-        SocketFuture::new(|| {
+        core::future::poll_fn(|cx| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Receiving with socket {}", self.fd);
 
             if token.is_cancelled() {
                 return Poll::Ready(Err(Error::OperationCancelled));
             }
+
+            register_socket_waker(cx.waker().clone(), self.fd);
 
             let mut receive_result = unsafe {
                 nrfxlib_sys::nrf_recv(self.fd, buffer.as_ptr() as *mut _, buffer.len(), 0)
@@ -323,6 +372,7 @@ impl Socket {
             const NRF_EWOULDBLOCK: isize = -(nrfxlib_sys::NRF_EWOULDBLOCK as isize);
 
             match receive_result {
+                0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
                 bytes_received @ 0.. => Poll::Ready(Ok(bytes_received as usize)),
                 NRF_EWOULDBLOCK => Poll::Pending,
                 error => Poll::Ready(Err(Error::NrfError(error))),
@@ -331,6 +381,7 @@ impl Socket {
         .await
     }
 
+    /// Call the [nrfxlib_sys::nrf_recvfrom] in an async fashion
     pub async fn receive_from(
         &self,
         buffer: &mut [u8],
@@ -338,7 +389,7 @@ impl Socket {
     ) -> Result<(usize, SocketAddr), Error> {
         token.bind_to_current_task().await;
 
-        SocketFuture::new(|| {
+        core::future::poll_fn(|cx| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Receiving with socket {}", self.fd);
 
@@ -351,6 +402,8 @@ impl Socket {
                 [0u8; core::mem::size_of::<nrfxlib_sys::nrf_sockaddr_in6>()];
             let socket_addr_ptr = socket_addr_store.as_mut_ptr() as *mut nrfxlib_sys::nrf_sockaddr;
             let mut socket_addr_len = 0u32;
+
+            register_socket_waker(cx.waker().clone(), self.fd);
 
             let mut receive_result = unsafe {
                 nrfxlib_sys::nrf_recvfrom(
@@ -373,6 +426,7 @@ impl Socket {
             const NRF_EWOULDBLOCK: isize = -(nrfxlib_sys::NRF_EWOULDBLOCK as isize);
 
             match receive_result {
+                0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
                 bytes_received @ 0.. => Poll::Ready(Ok((bytes_received as usize, {
                     unsafe { (*socket_addr_ptr).sa_family = self.family as u32 as i32 }
                     NrfSockAddr::from(socket_addr_ptr as *const _).into()
@@ -384,6 +438,7 @@ impl Socket {
         .await
     }
 
+    /// Call the [nrfxlib_sys::nrf_sendto] in an async fashion
     pub async fn send_to(
         &self,
         buffer: &[u8],
@@ -392,7 +447,7 @@ impl Socket {
     ) -> Result<usize, Error> {
         token.bind_to_current_task().await;
 
-        SocketFuture::new(|| {
+        core::future::poll_fn(|cx| {
             #[cfg(feature = "defmt")]
             defmt::trace!("Sending with socket {}", self.fd);
 
@@ -401,6 +456,8 @@ impl Socket {
             }
 
             let addr = NrfSockAddr::from(address);
+
+            register_socket_waker(cx.waker().clone(), self.fd);
 
             let mut send_result = unsafe {
                 nrfxlib_sys::nrf_sendto(
@@ -423,6 +480,7 @@ impl Socket {
             const NRF_EWOULDBLOCK: isize = -(nrfxlib_sys::NRF_EWOULDBLOCK as isize);
 
             match send_result {
+                0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
                 bytes_received @ 0.. => Poll::Ready(Ok(bytes_received as usize)),
                 NRF_EWOULDBLOCK => Poll::Pending,
                 error => Poll::Ready(Err(Error::NrfError(error))),
@@ -477,76 +535,6 @@ impl PartialEq for Socket {
     }
 }
 impl Eq for Socket {}
-
-/// A future that automatically manages its waker and its registration to [WAKER_NODE_LIST].
-/// After the waker management in `poll` the runner is called which must return the [Poll] result.
-struct SocketFuture<R, O>
-where
-    R: FnMut() -> Poll<Result<O, Error>> + Unpin,
-    O: Unpin,
-{
-    runner: R,
-    waker_node: Option<WakerNode<()>>,
-    _phantom: PhantomData<O>,
-}
-
-impl<R, O> SocketFuture<R, O>
-where
-    R: FnMut() -> Poll<Result<O, Error>> + Unpin,
-    O: Unpin,
-{
-    fn new(runner: R) -> Self {
-        Self {
-            runner,
-            waker_node: None,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<R, O> Future for SocketFuture<R, O>
-where
-    R: FnMut() -> Poll<Result<O, Error>> + Unpin,
-    O: Unpin,
-{
-    type Output = Result<O, Error>;
-
-    fn poll(
-        mut self: core::pin::Pin<&mut Self>,
-        cx: &mut core::task::Context<'_>,
-    ) -> Poll<Self::Output> {
-        // Register our waker node
-        critical_section::with(|cs| {
-            let mut list = WAKER_NODE_LIST.borrow_ref_mut(cs);
-            let waker_node = self
-                .waker_node
-                .get_or_insert_with(|| WakerNode::new(None, cx.waker().clone()));
-            waker_node.waker = cx.waker().clone();
-            unsafe {
-                list.append_node(waker_node as *mut _);
-            }
-        });
-
-        (self.runner)()
-    }
-}
-
-impl<R, O> Drop for SocketFuture<R, O>
-where
-    R: FnMut() -> Poll<Result<O, Error>> + Unpin,
-    O: Unpin,
-{
-    fn drop(&mut self) {
-        // Make sure to remove the waker node from this list when we have to
-        if let Some(waker_node) = self.waker_node.as_mut() {
-            critical_section::with(|cs| unsafe {
-                WAKER_NODE_LIST
-                    .borrow_ref_mut(cs)
-                    .remove_node(waker_node as *mut _)
-            });
-        }
-    }
-}
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]

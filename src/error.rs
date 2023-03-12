@@ -27,6 +27,7 @@ pub enum Error {
     /// The ongoing operation has been cancelled by the user
     OperationCancelled,
     SmsNumberNotAscii,
+    Disconnected,
 }
 
 pub trait ErrorSource {

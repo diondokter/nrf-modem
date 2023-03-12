@@ -117,39 +117,4 @@ impl<T: ?Sized> WakerNodeList<T> {
             }
         }
     }
-
-    /// Wakes all nodes and reset the list so they won't get woken up again
-    pub fn wake_all_and_reset(&mut self, mut wake_function: impl FnMut(&mut T)) {
-        // Get the first node
-        let mut node = match self.next_node {
-            Some(node) => node,
-            None => return,
-        };
-
-        unsafe {
-            loop {
-                // Run the callback if there is a context
-                if let Some(context) = (*node).context {
-                    wake_function(&mut *context);
-                }
-
-                // Wake the node
-                (*node).waker.wake_by_ref();
-
-                // Get the next node if there is one
-                match (*node).next_node {
-                    Some(next_node) => {
-                        (*node).next_node = None;
-                        (*node).previous_node = None;
-                        node = next_node;
-                    }
-                    None => {
-                        break;
-                    }
-                }
-            }
-        }
-
-        self.next_node = None;
-    }
 }

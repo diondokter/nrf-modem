@@ -34,6 +34,10 @@ impl Clone for LteLink {
 impl LteLink {
     /// Create a new instance
     pub async fn new() -> Result<Self, Error> {
+        if unsafe { !nrfxlib_sys::nrf_modem_is_initialized() } {
+            return Err(Error::ModemNotInitialized);
+        }
+
         if ACTIVE_LINKS.fetch_add(1, Ordering::SeqCst) == 0 {
             // We have to activate the modem
             #[cfg(feature = "defmt")]
@@ -171,10 +175,17 @@ impl Drop for LteLink {
 
             // Turn off the network side of the modem
             // We need to send this blocking because we don't have async drop yet
-            crate::at::send_at_blocking::<0>("AT+CFUN=20").unwrap();
+            if let Err(_e) = crate::at::send_at_blocking::<0>("AT+CFUN=20") {
+                #[cfg(feature = "defmt")]
+                defmt::error!("Could not turn off the modem: {}", _e);    
+            }
             // Turn off the UICC
             // We need to send this blocking because we don't have async drop yet
-            crate::at::send_at_blocking::<0>("AT+CFUN=40").unwrap();
+            if let Err(_e) = crate::at::send_at_blocking::<0>("AT+CFUN=40") {
+
+                #[cfg(feature = "defmt")]
+                defmt::error!("Could not turn off the UICC: {}", _e);
+            }
         }
     }
 }
