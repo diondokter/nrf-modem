@@ -329,9 +329,11 @@ impl Socket {
             defmt::trace!("Send result {}", send_result);
 
             const NRF_EWOULDBLOCK: isize = -(nrfxlib_sys::NRF_EWOULDBLOCK as isize);
+            const NRF_ENOTCONN: isize = -(nrfxlib_sys::NRF_ENOTCONN as isize);
 
             match send_result {
                 0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
+                NRF_ENOTCONN => Poll::Ready(Err(Error::Disconnected)),
                 bytes_sent @ 0.. => Poll::Ready(Ok(bytes_sent as usize)),
                 NRF_EWOULDBLOCK => Poll::Pending,
                 error => Poll::Ready(Err(Error::NrfError(error))),
@@ -370,9 +372,11 @@ impl Socket {
             defmt::trace!("Receive result {}", receive_result);
 
             const NRF_EWOULDBLOCK: isize = -(nrfxlib_sys::NRF_EWOULDBLOCK as isize);
+            const NRF_ENOTCONN: isize = -(nrfxlib_sys::NRF_ENOTCONN as isize);
 
             match receive_result {
                 0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
+                NRF_ENOTCONN => Poll::Ready(Err(Error::Disconnected)),
                 bytes_received @ 0.. => Poll::Ready(Ok(bytes_received as usize)),
                 NRF_EWOULDBLOCK => Poll::Pending,
                 error => Poll::Ready(Err(Error::NrfError(error))),
@@ -424,9 +428,11 @@ impl Socket {
             defmt::trace!("Receive result {}", receive_result);
 
             const NRF_EWOULDBLOCK: isize = -(nrfxlib_sys::NRF_EWOULDBLOCK as isize);
+            const NRF_ENOTCONN: isize = -(nrfxlib_sys::NRF_ENOTCONN as isize);
 
             match receive_result {
                 0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
+                NRF_ENOTCONN => Poll::Ready(Err(Error::Disconnected)),
                 bytes_received @ 0.. => Poll::Ready(Ok((bytes_received as usize, {
                     unsafe { (*socket_addr_ptr).sa_family = self.family as u32 as i32 }
                     NrfSockAddr::from(socket_addr_ptr as *const _).into()
@@ -478,9 +484,11 @@ impl Socket {
             defmt::trace!("Sending result {}", send_result);
 
             const NRF_EWOULDBLOCK: isize = -(nrfxlib_sys::NRF_EWOULDBLOCK as isize);
+            const NRF_ENOTCONN: isize = -(nrfxlib_sys::NRF_ENOTCONN as isize);
 
             match send_result {
                 0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
+                NRF_ENOTCONN => Poll::Ready(Err(Error::Disconnected)),
                 bytes_received @ 0.. => Poll::Ready(Ok(bytes_received as usize)),
                 NRF_EWOULDBLOCK => Poll::Pending,
                 error => Poll::Ready(Err(Error::NrfError(error))),

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3 (13-03-23)
+
+- `NRF_ENOTCONN` socket errors are now reported as Disconnected instead of as unknown nrf errors
+
 ## 0.2.2 (12-03-23)
 
 - Sockets are now waken up from IPC interrupts instead of APP interrupts. This makes it so the wakers are only woken ~62% of the times in the previous version
