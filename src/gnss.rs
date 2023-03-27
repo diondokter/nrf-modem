@@ -19,6 +19,10 @@ static GNSS_NMEA_STRINGS: Mutex<RefCell<ArrayVec<Result<GnssData, Error>, MAX_NM
     Mutex::new(RefCell::new(ArrayVec::new_const()));
 static GNSS_TAKEN: AtomicBool = AtomicBool::new(false);
 
+pub(crate) fn is_gnss_in_use() -> bool {
+    GNSS_TAKEN.load(Ordering::SeqCst)
+}
+
 unsafe extern "C" fn gnss_callback(event: i32) {
     let event_type = GnssEventType::from(event as u32);
 
@@ -168,14 +172,29 @@ impl Gnss {
         }
         Ok(())
     }
+
+    pub async fn deactivate(self) -> Result<(), Error> {
+        #[cfg(feature = "defmt")]
+        defmt::trace!("Turning off GNSS.");
+
+        crate::at::send_at::<0>("AT+CFUN=30").await?;
+
+        GNSS_TAKEN.store(false, Ordering::SeqCst);
+
+        Ok(())
+    }
 }
 
 impl Drop for Gnss {
     fn drop(&mut self) {
-        unsafe {
+        #[cfg(feature = "defmt")]
+        defmt::debug!(
+            "Turning off GNSS synchronously. Use async function `deactivate` to avoid blocking."
+        );
+
+        if let Err(_e) = crate::at::send_at_blocking::<0>("AT+CFUN=30") {
             #[cfg(feature = "defmt")]
-            defmt::debug!("Disabling gnss");
-            nrfxlib_sys::nrf_modem_at_printf(b"AT+CFUN=30".as_ptr());
+            defmt::error!("Turning off GNSS got an error: {}", _e);
         }
 
         GNSS_TAKEN.store(false, Ordering::SeqCst);
@@ -484,6 +503,10 @@ impl GnssStream {
             done: false,
             gnss: Some(gnss),
         }
+    }
+
+    pub async fn deactivate(self) -> Result<(), Error> {
+        self.free().deactivate().await
     }
 
     /// Get back the gnss instance

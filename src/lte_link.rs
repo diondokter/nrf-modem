@@ -9,6 +9,10 @@ use core::{
 
 static ACTIVE_LINKS: AtomicU32 = AtomicU32::new(0);
 
+pub(crate) fn is_lte_link_in_use() -> bool {
+    ACTIVE_LINKS.load(Ordering::SeqCst) > 0
+}
+
 /// An object that keeps the modem connected.
 /// As long as there is an instance, the modem will be kept on.
 /// The drop function disables the modem if there is no link left.
@@ -177,12 +181,11 @@ impl Drop for LteLink {
             // We need to send this blocking because we don't have async drop yet
             if let Err(_e) = crate::at::send_at_blocking::<0>("AT+CFUN=20") {
                 #[cfg(feature = "defmt")]
-                defmt::error!("Could not turn off the modem: {}", _e);    
+                defmt::error!("Could not turn off the modem: {}", _e);
             }
             // Turn off the UICC
             // We need to send this blocking because we don't have async drop yet
             if let Err(_e) = crate::at::send_at_blocking::<0>("AT+CFUN=40") {
-
                 #[cfg(feature = "defmt")]
                 defmt::error!("Could not turn off the UICC: {}", _e);
             }
