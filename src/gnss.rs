@@ -19,10 +19,6 @@ static GNSS_NMEA_STRINGS: Mutex<RefCell<ArrayVec<Result<GnssData, Error>, MAX_NM
     Mutex::new(RefCell::new(ArrayVec::new_const()));
 static GNSS_TAKEN: AtomicBool = AtomicBool::new(false);
 
-pub(crate) fn is_gnss_in_use() -> bool {
-    GNSS_TAKEN.load(Ordering::SeqCst)
-}
-
 unsafe extern "C" fn gnss_callback(event: i32) {
     let event_type = GnssEventType::from(event as u32);
 

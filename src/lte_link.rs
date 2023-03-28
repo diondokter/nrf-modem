@@ -9,10 +9,6 @@ use core::{
 
 static ACTIVE_LINKS: AtomicU32 = AtomicU32::new(0);
 
-pub(crate) fn is_lte_link_in_use() -> bool {
-    ACTIVE_LINKS.load(Ordering::SeqCst) > 0
-}
-
 /// An object that keeps the modem connected.
 /// As long as there is an instance, the modem will be kept on.
 /// The drop function disables the modem if there is no link left.
