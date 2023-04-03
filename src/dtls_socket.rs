@@ -103,15 +103,15 @@ impl DtlsSocket {
         &self.inner
     }
 
-    pub fn split_owned(self) -> (OwnedDtlsReceiveSocket, OwnedDtlsSendSocket) {
-        let (read_split, write_split) = self.inner.split();
+    pub async fn split_owned(self) -> Result<(OwnedDtlsReceiveSocket, OwnedDtlsSendSocket), Error> {
+        let (read_split, write_split) = self.inner.split().await?;
 
-        (
+        Ok((
             OwnedDtlsReceiveSocket { socket: read_split },
             OwnedDtlsSendSocket {
                 socket: write_split,
             },
-        )
+        ))
     }
 
     pub fn split(&self) -> (DtlsReceiveSocket<'_>, DtlsSendSocket<'_>) {

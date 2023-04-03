@@ -6,6 +6,17 @@ This is a library that provides a high-level async API for the nRF9160 modem.
 
 It can be used with any executor.
 
+## Errors and recovery
+
+Dropping LteLink and Gnss (which also include all sockets and GnssStream) *can* lead to the modem staying active.
+There's an internal mutex that can be locked. Panicking is the only sane reaction to that.
+If you have a better idea, please open an issue or PR!
+The async `deactivate` function is way less likely to go wrong and you'll get a Result back so you know that something has gone wrong.
+
+If anything does go wrong, `has_runtime_state_error()` will return true.
+Everything should stay working, but it's likely that the modem won't be properly turned off.
+This can be recovered by calling the `reset_runtime_state()` function when you've made sure nothing of the modem is used anymore.
+
 ## Setup
 
 There are a couple of things you must do to be able to use the library.

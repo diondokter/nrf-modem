@@ -28,6 +28,8 @@ pub enum Error {
     OperationCancelled,
     SmsNumberNotAscii,
     Disconnected,
+    TooManyLteLinks,
+    InternalRuntimeMutexLocked,
 }
 
 pub trait ErrorSource {

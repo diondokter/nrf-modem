@@ -1,13 +1,7 @@
 //! Implementation of [LteLink]
 
 use crate::{at, at_notifications::AtNotificationStream, error::Error, CancellationToken};
-use core::{
-    mem,
-    ops::ControlFlow,
-    sync::atomic::{AtomicU32, Ordering},
-};
-
-static ACTIVE_LINKS: AtomicU32 = AtomicU32::new(0);
+use core::{mem, ops::ControlFlow};
 
 /// An object that keeps the modem connected.
 /// As long as there is an instance, the modem will be kept on.
@@ -24,13 +18,6 @@ static ACTIVE_LINKS: AtomicU32 = AtomicU32::new(0);
 #[derive(Debug, PartialEq, Eq)]
 pub struct LteLink(());
 
-impl Clone for LteLink {
-    fn clone(&self) -> Self {
-        ACTIVE_LINKS.fetch_add(1, Ordering::SeqCst);
-        Self(())
-    }
-}
-
 impl LteLink {
     /// Create a new instance
     pub async fn new() -> Result<Self, Error> {
@@ -38,18 +25,7 @@ impl LteLink {
             return Err(Error::ModemNotInitialized);
         }
 
-        if ACTIVE_LINKS.fetch_add(1, Ordering::SeqCst) == 0 {
-            // We have to activate the modem
-            #[cfg(feature = "defmt")]
-            defmt::debug!("Enabling modem LTE");
-
-            // Set Ultra low power mode
-            crate::at::send_at::<0>("AT%XDATAPRFL=0").await?;
-            // Set UICC low power mode
-            crate::at::send_at::<0>("AT+CEPPI=1").await?;
-            // Activate LTE without changing GNSS
-            crate::at::send_at::<0>("AT+CFUN=21").await?;
-        }
+        crate::MODEM_RUNTIME_STATE.activate_lte().await?;
 
         Ok(LteLink(()))
     }
@@ -153,38 +129,27 @@ impl LteLink {
     /// Deactivates Lte. This does the same as dropping the instance, but in an async manner.
     pub async fn deactivate(self) -> Result<(), Error> {
         mem::forget(self);
+        let result = crate::MODEM_RUNTIME_STATE.deactivate_lte().await;
 
-        if ACTIVE_LINKS.fetch_sub(1, Ordering::SeqCst) == 1 {
-            // Turn off the network side of the modem
-            crate::at::send_at::<0>("AT+CFUN=20").await?;
-            // Turn off the UICC
-            crate::at::send_at::<0>("AT+CFUN=40").await?;
+        if result.is_err() {
+            crate::MODEM_RUNTIME_STATE.set_error_active();
         }
 
-        Ok(())
+        result
     }
 }
 
 impl Drop for LteLink {
     fn drop(&mut self) {
-        if ACTIVE_LINKS.fetch_sub(1, Ordering::SeqCst) == 1 {
-            #[cfg(feature = "defmt")]
-            defmt::debug!(
-                "Turning off LTE synchronously. Use async function `deactivate` to avoid blocking."
-            );
+        #[cfg(feature = "defmt")]
+        defmt::warn!(
+            "Turning off LTE synchronously. Use async function `deactivate` to avoid blocking and to get more guarantees that the modem is actually shut off."
+        );
 
-            // Turn off the network side of the modem
-            // We need to send this blocking because we don't have async drop yet
-            if let Err(_e) = crate::at::send_at_blocking::<0>("AT+CFUN=20") {
-                #[cfg(feature = "defmt")]
-                defmt::error!("Could not turn off the modem: {}", _e);
-            }
-            // Turn off the UICC
-            // We need to send this blocking because we don't have async drop yet
-            if let Err(_e) = crate::at::send_at_blocking::<0>("AT+CFUN=40") {
-                #[cfg(feature = "defmt")]
-                defmt::error!("Could not turn off the UICC: {}", _e);
-            }
+        if let Err(_e) = crate::MODEM_RUNTIME_STATE.deactivate_lte_blocking() {
+            #[cfg(feature = "defmt")]
+            defmt::error!("Could not turn off the lte: {}", _e);
+            crate::MODEM_RUNTIME_STATE.set_error_active();
         }
     }
 }

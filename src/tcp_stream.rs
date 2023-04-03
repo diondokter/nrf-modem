@@ -154,15 +154,15 @@ impl TcpStream {
     }
 
     /// Split the stream into an owned read and write half
-    pub fn split_owned(self) -> (OwnedTcpReadStream, OwnedTcpWriteStream) {
-        let (read_split, write_split) = self.inner.split();
+    pub async fn split_owned(self) -> Result<(OwnedTcpReadStream, OwnedTcpWriteStream), Error> {
+        let (read_split, write_split) = self.inner.split().await?;
 
-        (
+        Ok((
             OwnedTcpReadStream { stream: read_split },
             OwnedTcpWriteStream {
                 stream: write_split,
             },
-        )
+        ))
     }
 
     /// Split the stream into a borrowed read and write half

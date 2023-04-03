@@ -64,7 +64,7 @@ impl<'a> Sms<'a> {
     // Encode number in the way modem expect it
     // Reimplement from https://github.com/nrfconnect/sdk-nrf/blob/main/lib/sms/sms_submit.c#L46
     fn encode_number(number: &str) -> Result<ArrayString<15>, Error> {
-        let mut number: ArrayString<15> = ArrayString::from(number.trim_start_matches("+"))
+        let mut number: ArrayString<15> = ArrayString::from(number.trim_start_matches('+'))
             .map_err(|_| Error::BufferTooSmall(None))?;
 
         if number.len() % 2 != 0 {
@@ -79,7 +79,7 @@ impl<'a> Sms<'a> {
                     .as_bytes()
                     .chunks(2)
                     .flat_map(|c| [c[1], c[0]])
-                    .chain((0..15 - number.len()).into_iter().map(|_| 0))
+                    .chain((0..15 - number.len()).map(|_| 0))
                     .collect::<ArrayVec<u8, 15>>()
                     .into_inner()
                     .unwrap(),

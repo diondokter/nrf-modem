@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0
+
+- *Breaking*: LteLink is no longer Clone.
+- *Breaking*: There is no longer a race going on for turning the modem on and off.
+  This does mean that dropping LteLink or GNSS can lead to the modem not being turned off when it happens at the same time as another drop or deactivate.
+  (There's a mutex that if it cannot be unlocked will lead to this behaviour)
+- *Breaking*: Splitting sockets is now async and fallible
+- GNSS now has an async deactivate function that you can call in place of drop
+- When both the LTE and GPS are turned off the `CFUN=0` at command is used to turn off the modem fully.
+  This also saves the modem settings to its NVM.0
+- Added an error recovery method. See the readme for more information.
+
 ## 0.2.3 (13-03-23)
 
 - `NRF_ENOTCONN` socket errors are now reported as Disconnected instead of as unknown nrf errors
@@ -16,8 +28,8 @@
 
 ## 0.2.0 (19-01-23)
 
+- *Breaking*: The error enum is now non-exhaustive
 - UICC is now disabled when the LTE is disabled to save on power.
-- The error enum is now non-exhaustive
 - Added the ability to send SMS messages (https://github.com/diondokter/nrf-modem/pull/9)
 
 ## 0.1.1 (26-12-22)

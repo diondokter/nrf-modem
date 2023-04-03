@@ -4,7 +4,7 @@ use core::{
     cell::RefCell,
     mem::{size_of, MaybeUninit},
     pin::Pin,
-    sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
     task::{Context, Poll},
 };
 use critical_section::Mutex;
@@ -17,7 +17,6 @@ static GNSS_WAKER: AtomicWaker = AtomicWaker::new();
 static GNSS_NOTICED_EVENTS: AtomicU32 = AtomicU32::new(0);
 static GNSS_NMEA_STRINGS: Mutex<RefCell<ArrayVec<Result<GnssData, Error>, MAX_NMEA_BURST_SIZE>>> =
     Mutex::new(RefCell::new(ArrayVec::new_const()));
-static GNSS_TAKEN: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "C" fn gnss_callback(event: i32) {
     let event_type = GnssEventType::from(event as u32);
@@ -51,14 +50,7 @@ impl Gnss {
             return Err(Error::ModemNotInitialized);
         }
 
-        if GNSS_TAKEN.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst) != Ok(false)
-        {
-            return Err(Error::GnssAlreadyTaken);
-        }
-
-        #[cfg(feature = "defmt")]
-        defmt::debug!("Enabling gnss");
-        crate::at::send_at::<0>("AT+CFUN=31").await?;
+        crate::MODEM_RUNTIME_STATE.activate_gps().await?;
 
         unsafe {
             nrfxlib_sys::nrf_modem_gnss_event_handler_set(Some(gnss_callback));
@@ -170,30 +162,29 @@ impl Gnss {
     }
 
     pub async fn deactivate(self) -> Result<(), Error> {
-        #[cfg(feature = "defmt")]
-        defmt::trace!("Turning off GNSS.");
+        core::mem::forget(self);
+        let result = crate::MODEM_RUNTIME_STATE.deactivate_gps().await;
 
-        crate::at::send_at::<0>("AT+CFUN=30").await?;
+        if result.is_err() {
+            crate::MODEM_RUNTIME_STATE.set_error_active();
+        }
 
-        GNSS_TAKEN.store(false, Ordering::SeqCst);
-
-        Ok(())
+        result
     }
 }
 
 impl Drop for Gnss {
     fn drop(&mut self) {
         #[cfg(feature = "defmt")]
-        defmt::debug!(
-            "Turning off GNSS synchronously. Use async function `deactivate` to avoid blocking."
+        defmt::warn!(
+            "Turning off GNSS synchronously. Use async function `deactivate` to avoid blocking and to get more guarantees that the modem is actually shut off."
         );
 
-        if let Err(_e) = crate::at::send_at_blocking::<0>("AT+CFUN=30") {
+        if let Err(_e) = crate::MODEM_RUNTIME_STATE.deactivate_gps_blocking() {
             #[cfg(feature = "defmt")]
-            defmt::error!("Turning off GNSS got an error: {}", _e);
+            defmt::error!("Could not turn off the gnss: {}", _e);
+            crate::MODEM_RUNTIME_STATE.set_error_active();
         }
-
-        GNSS_TAKEN.store(false, Ordering::SeqCst);
     }
 }
 

@@ -106,15 +106,15 @@ impl UdpSocket {
     }
 
     /// Split the socket into an owned read and write half
-    pub fn split_owned(self) -> (OwnedUdpReceiveSocket, OwnedUdpSendSocket) {
-        let (read_split, write_split) = self.inner.split();
+    pub async fn split_owned(self) -> Result<(OwnedUdpReceiveSocket, OwnedUdpSendSocket), Error> {
+        let (read_split, write_split) = self.inner.split().await?;
 
-        (
+        Ok((
             OwnedUdpReceiveSocket { socket: read_split },
             OwnedUdpSendSocket {
                 socket: write_split,
             },
-        )
+        ))
     }
 
     /// Split the socket into a borrowed read and write half

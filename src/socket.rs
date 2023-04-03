@@ -134,16 +134,16 @@ impl Socket {
         self.fd
     }
 
-    pub fn split(mut self) -> (SplitSocketHandle, SplitSocketHandle) {
+    pub async fn split(mut self) -> Result<(SplitSocketHandle, SplitSocketHandle), Error> {
         let index = SplitSocketHandle::get_new_spot();
         self.split = true;
 
-        (
+        Ok((
             SplitSocketHandle {
                 inner: Some(Socket {
                     fd: self.fd,
                     family: self.family,
-                    link: self.link.clone(),
+                    link: Some(LteLink::new().await?),
                     split: true,
                 }),
                 index,
@@ -152,7 +152,7 @@ impl Socket {
                 inner: Some(self),
                 index,
             },
-        )
+        ))
     }
 
     /// Connect to the given socket address.
@@ -605,7 +605,9 @@ impl<'a> SocketOption<'a> {
             SocketOption::TlsHostName(s) => s.len() as u32,
             SocketOption::TlsPeerVerify(x) => core::mem::size_of_val(x) as u32,
             SocketOption::TlsSessionCache(x) => core::mem::size_of_val(x) as u32,
-            SocketOption::TlsTagList(x) => core::mem::size_of_val(x) as u32,
+            SocketOption::TlsTagList(x) => {
+                (x.len() * core::mem::size_of::<nrfxlib_sys::nrf_sec_tag_t>()) as u32
+            }
         }
     }
 }

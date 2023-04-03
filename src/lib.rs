@@ -3,8 +3,12 @@
 // #![warn(missing_docs)]
 
 use crate::error::ErrorSource;
-use core::cell::RefCell;
+use core::{
+    cell::RefCell,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use cortex_m::interrupt::Mutex;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use linked_list_allocator::Heap;
 
 mod at;
@@ -50,16 +54,6 @@ pub use udp_socket::*;
 ///
 type WrappedHeap = Mutex<RefCell<Option<Heap>>>;
 
-//******************************************************************************
-// Constants
-//******************************************************************************
-
-// None
-
-//******************************************************************************
-// Global Variables
-//******************************************************************************
-
 /// Our general heap.
 ///
 /// We initialise it later with a static variable as the backing store.
@@ -71,15 +65,7 @@ static LIBRARY_ALLOCATOR: WrappedHeap = Mutex::new(RefCell::new(None));
 /// seen by the Cortex-M33 and the modem CPU.
 static TX_ALLOCATOR: WrappedHeap = Mutex::new(RefCell::new(None));
 
-//******************************************************************************
-// Macros
-//******************************************************************************
-
-// None
-
-//******************************************************************************
-// Public Functions and Impl on Public Types
-//******************************************************************************
+pub(crate) static MODEM_RUNTIME_STATE: RuntimeState = RuntimeState::new();
 
 /// Start the NRF Modem library
 pub async fn init(mode: SystemMode) -> Result<(), Error> {
@@ -286,4 +272,278 @@ pub async fn configure_gnss_on_pca10090ns() -> Result<(), Error> {
     // Configure the GNSS antenna. See `nrf/samples/nrf9160/gps/src/main.c`.
     crate::at::send_at::<0>("AT%XMAGPIO=1,0,0,1,1,1574,1577").await?;
     Ok(())
+}
+
+struct RuntimeState {
+    state: embassy_sync::mutex::Mutex<CriticalSectionRawMutex, (bool, u16)>,
+    error: AtomicBool,
+}
+
+impl RuntimeState {
+    const fn new() -> Self {
+        Self {
+            state: embassy_sync::mutex::Mutex::new((false, 0)),
+            error: AtomicBool::new(false),
+        }
+    }
+
+    pub(crate) async fn activate_gps(&self) -> Result<(), Error> {
+        let mut state = self.state.lock().await;
+
+        if state.0 {
+            return Err(Error::GnssAlreadyTaken);
+        }
+
+        ModemActivation::Gnss.act_on_modem().await?;
+
+        state.0 = true;
+
+        Ok(())
+    }
+
+    pub(crate) async fn deactivate_gps(&self) -> Result<(), Error> {
+        let mut state = self.state.lock().await;
+
+        if !state.0 {
+            panic!("Can't deactivate an inactive gps");
+        }
+
+        if state.1 == 0 {
+            ModemDeactivation::Everything.act_on_modem().await?;
+        } else {
+            ModemDeactivation::OnlyGnss.act_on_modem().await?;
+        }
+
+        state.0 = false;
+
+        Ok(())
+    }
+
+    pub(crate) fn deactivate_gps_blocking(&self) -> Result<(), Error> {
+        let mut state = self
+            .state
+            .try_lock()
+            .map_err(|_| Error::InternalRuntimeMutexLocked)?;
+
+        if !state.0 {
+            panic!("Can't deactivate an inactive gps");
+        }
+
+        if state.1 == 0 {
+            ModemDeactivation::Everything.act_on_modem_blocking()?;
+        } else {
+            ModemDeactivation::OnlyGnss.act_on_modem_blocking()?;
+        }
+
+        state.0 = false;
+
+        Ok(())
+    }
+
+    pub(crate) async fn activate_lte(&self) -> Result<(), Error> {
+        let mut state = self.state.lock().await;
+
+        if state.1 == u16::MAX {
+            return Err(Error::TooManyLteLinks);
+        }
+
+        if state.1 == 0 {
+            ModemActivation::Lte.act_on_modem().await?;
+        }
+
+        state.1 += 1;
+
+        Ok(())
+    }
+
+    pub(crate) async fn deactivate_lte(&self) -> Result<(), Error> {
+        let mut state = self.state.lock().await;
+
+        if state.1 == 0 {
+            panic!("Can't deactivate an inactive lte");
+        }
+
+        if state.1 == 1 {
+            if state.0 {
+                ModemDeactivation::OnlyLte
+            } else {
+                ModemDeactivation::Everything
+            }
+        } else {
+            ModemDeactivation::Nothing
+        }
+        .act_on_modem()
+        .await?;
+
+        state.1 -= 1;
+
+        Ok(())
+    }
+
+    pub(crate) fn deactivate_lte_blocking(&self) -> Result<(), Error> {
+        let mut state = self
+            .state
+            .try_lock()
+            .map_err(|_| Error::InternalRuntimeMutexLocked)?;
+
+        if state.1 == 0 {
+            panic!("Can't deactivate an inactive lte");
+        }
+
+        if state.1 == 1 {
+            if state.0 {
+                ModemDeactivation::OnlyLte
+            } else {
+                ModemDeactivation::Everything
+            }
+        } else {
+            ModemDeactivation::Nothing
+        }
+        .act_on_modem_blocking()?;
+
+        state.1 -= 1;
+
+        Ok(())
+    }
+
+    pub(crate) fn set_error_active(&self) {
+        self.error.store(true, Ordering::SeqCst);
+    }
+
+    pub(crate) fn get_error_active(&self) -> bool {
+        self.error.load(Ordering::SeqCst)
+    }
+
+    pub(crate) async unsafe fn reset_runtime_state(&self) -> Result<(), Error> {
+        let mut state = self.state.lock().await;
+
+        if self
+            .error
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            ModemDeactivation::Everything.act_on_modem().await?;
+            state.0 = false;
+            state.1 = 0;
+        }
+
+        self.error.store(false, Ordering::SeqCst);
+
+        Ok(())
+    }
+}
+
+/// Returns true when the runtime has detected that its state may not represent the actual modem state.
+/// This means that the modem may remain active while the runtime thinks it has turned it off.
+///
+/// This can be fixed using [reset_runtime_state]
+pub fn has_runtime_state_error() -> bool {
+    MODEM_RUNTIME_STATE.get_error_active()
+}
+
+/// Resets the runtime state by forcing the modem to be turned off and resetting the state back to 0.
+///
+/// ## Safety
+///
+/// This function may only be used when you've made sure that **no** active LteLinks instances and Gnss instances exist
+pub async unsafe fn reset_runtime_state() -> Result<(), Error> {
+    MODEM_RUNTIME_STATE.reset_runtime_state().await
+}
+
+enum ModemDeactivation {
+    OnlyGnss,
+    OnlyLte,
+    Nothing,
+    Everything,
+}
+
+impl ModemDeactivation {
+    async fn act_on_modem(&self) -> Result<(), Error> {
+        match self {
+            ModemDeactivation::OnlyGnss => {
+                #[cfg(feature = "defmt")]
+                defmt::debug!("Disabling modem GNSS");
+
+                at::send_at::<0>("AT+CFUN=30").await?;
+            }
+            ModemDeactivation::OnlyLte => {
+                #[cfg(feature = "defmt")]
+                defmt::debug!("Disabling modem LTE");
+
+                // Turn off the network side of the modem
+                at::send_at::<0>("AT+CFUN=20").await?;
+                // Turn off the UICC
+                at::send_at::<0>("AT+CFUN=40").await?;
+            }
+            ModemDeactivation::Nothing => {}
+            ModemDeactivation::Everything => {
+                #[cfg(feature = "defmt")]
+                defmt::debug!("Disabling full modem");
+
+                at::send_at::<0>("AT+CFUN=0").await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn act_on_modem_blocking(&self) -> Result<(), Error> {
+        match self {
+            ModemDeactivation::OnlyGnss => {
+                #[cfg(feature = "defmt")]
+                defmt::debug!("Disabling modem GNSS");
+
+                at::send_at_blocking::<0>("AT+CFUN=30")?;
+            }
+            ModemDeactivation::OnlyLte => {
+                #[cfg(feature = "defmt")]
+                defmt::debug!("Disabling modem LTE");
+
+                // Turn off the network side of the modem
+                at::send_at_blocking::<0>("AT+CFUN=20")?;
+                // Turn off the UICC
+                at::send_at_blocking::<0>("AT+CFUN=40")?;
+            }
+            ModemDeactivation::Nothing => {}
+            ModemDeactivation::Everything => {
+                #[cfg(feature = "defmt")]
+                defmt::debug!("Disabling full modem");
+
+                at::send_at_blocking::<0>("AT+CFUN=0")?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+enum ModemActivation {
+    Lte,
+    Gnss,
+}
+
+impl ModemActivation {
+    async fn act_on_modem(&self) -> Result<(), Error> {
+        match self {
+            ModemActivation::Gnss => {
+                #[cfg(feature = "defmt")]
+                defmt::debug!("Enabling modem GNSS");
+
+                at::send_at::<0>("AT+CFUN=31").await?;
+            }
+            ModemActivation::Lte => {
+                #[cfg(feature = "defmt")]
+                defmt::debug!("Enabling modem LTE");
+
+                // Set Ultra low power mode
+                at::send_at::<0>("AT%XDATAPRFL=0").await?;
+                // Set UICC low power mode
+                at::send_at::<0>("AT+CEPPI=1").await?;
+                // Activate LTE without changing GNSS
+                at::send_at::<0>("AT+CFUN=21").await?;
+            }
+        }
+
+        Ok(())
+    }
 }
