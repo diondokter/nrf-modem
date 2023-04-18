@@ -1,6 +1,6 @@
 [package]
 name = "nrf-modem"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 rust-version = "1.64"
 license = "MIT OR Apache-2.0"
@@ -15,7 +15,7 @@ keywords = ["nRF9160", "LTE", "GPS", "NB-IoT", "embedded"]
 [dependencies]
 nrfxlib-sys = "2.1.0"
 futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
-num_enum = { version = "0.5.7", default-features = false }
+num_enum = { version = "0.6.1", default-features = false }
 defmt = { version = "0.3.2", optional = true }
 cortex-m = "0.7"
 linked_list_allocator = { version="0.10.1", default-features=false, features=["use_spin"] }
@@ -24,7 +24,7 @@ arrayvec = { version = "0.7", default-features = false }
 at-commands = "0.5.2"
 no-std-net = "0.6.0"
 critical-section = "1.1"
-embassy-sync = "0.1.0"
+embassy-sync = "0.2.0"
 
 [features]
 default = []

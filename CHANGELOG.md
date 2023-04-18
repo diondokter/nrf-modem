@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Updated embassy-sync to 0.2.0 (to fix new nightly compilation issue)
+- Updated num-enum to 0.6
+
 ## 0.3.0
 
 - *Breaking*: LteLink is no longer Clone.
