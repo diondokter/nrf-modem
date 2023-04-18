@@ -1,11 +1,11 @@
 # Changelog
 
-## 0.3.1
+## 0.3.1  (18-04-23)
 
 - Updated embassy-sync to 0.2.0 (to fix new nightly compilation issue)
 - Updated num-enum to 0.6
 
-## 0.3.0
+## 0.3.0 (03-04-23)
 
 - *Breaking*: LteLink is no longer Clone.
 - *Breaking*: There is no longer a race going on for turning the modem on and off.
