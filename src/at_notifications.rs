@@ -140,11 +140,26 @@ impl<const CAP: usize, const COUNT: usize> NotificationBuffer
 
         let mut string = ArrayString::new();
 
-        while !self.is_full() && unsafe { *notif != 0 } {
+        while !string.is_full() && unsafe { *notif != 0 } {
             let c = unsafe { char::from_u32_unchecked(((*notif) & 0x7F) as u32) };
             string.push(c);
 
             notif = unsafe { notif.add(1) };
+        }
+
+        #[cfg(feature = "defmt")]
+        if string.is_full() && unsafe { *notif != 0 } {
+            let mut missing_chars = 0;
+
+            while unsafe { *notif != 0 } {
+                notif = unsafe { notif.add(1) };
+                missing_chars += 1;
+            }
+
+            defmt::warn!(
+                "AT notification got truncated. Missing {} chars",
+                missing_chars
+            );
         }
 
         self.push(string);

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2 (24-04-23)
+
+- Fixed at notification issue where a too small string buffer would panic. Now the notification is truncated to the size of the string.
+
 ## 0.3.1  (18-04-23)
 
 - Updated embassy-sync to 0.2.0 (to fix new nightly compilation issue)
