@@ -41,27 +41,35 @@ Make sure you are in that context by using e.g. the SPM.
 ### Interrupts
 
 The `EGU1` and `IPC` interrupts must be routed to the modem software.
-In embassy you can do that as follows:
 
 ```rust,ignore
-let egu1 = embassy_nrf::interrupt::take!(EGU1);
-egu1.set_priority(Priority::P4);
-egu1.set_handler(|_| {
+// Interrupt Handler for LTE related hardware. Defer straight to the library.
+#[interrupt]
+#[allow(non_snake_case)]
+fn EGU1() {
     nrf_modem::application_irq_handler();
     cortex_m::asm::sev();
-});
-egu1.enable();
+}
 
-let ipc = embassy_nrf::interrupt::take!(IPC);
-ipc.set_priority(Priority::P0);
-ipc.set_handler(|_| {
+// Interrupt Handler for LTE related hardware. Defer straight to the library.
+#[interrupt]
+#[allow(non_snake_case)]
+fn IPC() {
     nrf_modem::ipc_irq_handler();
     cortex_m::asm::sev();
-});
-ipc.enable();
-```
-This can be done using the normal `cortex-m-rt` interrupts as well of course.
+}
 
+let mut cp = unwrap!(cortex_m::Peripherals::take());
+
+// Enable the modem interrupts
+unsafe {
+    NVIC::unmask(pac::Interrupt::EGU1);
+    NVIC::unmask(pac::Interrupt::IPC);
+    cp.NVIC.set_priority(pac::Interrupt::EGU1, 4 << 5);
+    cp.NVIC.set_priority(pac::Interrupt::IPC, 0 << 5);
+}
+```
+ 
 ### Power
 
 The DC/DC converter is automatically enabled for you when the library is initialized.
