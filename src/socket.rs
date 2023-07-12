@@ -12,6 +12,7 @@ use no_std_net::SocketAddr;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 const WAKER_INIT: Option<(Waker, i32)> = None;
+#[allow(clippy::type_complexity)]
 static SOCKET_WAKERS: Mutex<
     RefCell<[Option<(Waker, i32)>; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize]>,
 > = Mutex::new(RefCell::new(
@@ -332,7 +333,7 @@ impl Socket {
             const NRF_ENOTCONN: isize = -(nrfxlib_sys::NRF_ENOTCONN as isize);
 
             match send_result {
-                0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
+                0 if !buffer.is_empty() => Poll::Ready(Err(Error::Disconnected)),
                 NRF_ENOTCONN => Poll::Ready(Err(Error::Disconnected)),
                 bytes_sent @ 0.. => Poll::Ready(Ok(bytes_sent as usize)),
                 NRF_EWOULDBLOCK => Poll::Pending,
@@ -375,7 +376,7 @@ impl Socket {
             const NRF_ENOTCONN: isize = -(nrfxlib_sys::NRF_ENOTCONN as isize);
 
             match receive_result {
-                0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
+                0 if !buffer.is_empty() => Poll::Ready(Err(Error::Disconnected)),
                 NRF_ENOTCONN => Poll::Ready(Err(Error::Disconnected)),
                 bytes_received @ 0.. => Poll::Ready(Ok(bytes_received as usize)),
                 NRF_EWOULDBLOCK => Poll::Pending,
@@ -431,7 +432,7 @@ impl Socket {
             const NRF_ENOTCONN: isize = -(nrfxlib_sys::NRF_ENOTCONN as isize);
 
             match receive_result {
-                0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
+                0 if !buffer.is_empty() => Poll::Ready(Err(Error::Disconnected)),
                 NRF_ENOTCONN => Poll::Ready(Err(Error::Disconnected)),
                 bytes_received @ 0.. => Poll::Ready(Ok((bytes_received as usize, {
                     unsafe { (*socket_addr_ptr).sa_family = self.family as u32 as i32 }
@@ -487,7 +488,7 @@ impl Socket {
             const NRF_ENOTCONN: isize = -(nrfxlib_sys::NRF_ENOTCONN as isize);
 
             match send_result {
-                0 if buffer.len() > 0 => Poll::Ready(Err(Error::Disconnected)),
+                0 if !buffer.is_empty() => Poll::Ready(Err(Error::Disconnected)),
                 NRF_ENOTCONN => Poll::Ready(Err(Error::Disconnected)),
                 bytes_received @ 0.. => Poll::Ready(Ok(bytes_received as usize)),
                 NRF_EWOULDBLOCK => Poll::Pending,
@@ -574,6 +575,7 @@ pub enum SocketProtocol {
     DTls1v2 = nrfxlib_sys::NRF_SPROTO_DTLS1v2,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum SocketOption<'a> {
     TlsHostName(&'a str),
@@ -605,9 +607,7 @@ impl<'a> SocketOption<'a> {
             SocketOption::TlsHostName(s) => s.len() as u32,
             SocketOption::TlsPeerVerify(x) => core::mem::size_of_val(x) as u32,
             SocketOption::TlsSessionCache(x) => core::mem::size_of_val(x) as u32,
-            SocketOption::TlsTagList(x) => {
-                (x.len() * core::mem::size_of::<nrfxlib_sys::nrf_sec_tag_t>()) as u32
-            }
+            SocketOption::TlsTagList(x) => core::mem::size_of_val(*x) as u32,
         }
     }
 }
@@ -648,6 +648,7 @@ impl From<i32> for SocketOptionError {
     }
 }
 
+#[allow(clippy::declare_interior_mutable_const)]
 const ATOMIC_U8_INIT: AtomicU8 = AtomicU8::new(0);
 static ACTIVE_SPLIT_SOCKETS: [AtomicU8; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize] =
     [ATOMIC_U8_INIT; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize];

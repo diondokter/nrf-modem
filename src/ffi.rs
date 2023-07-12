@@ -8,6 +8,8 @@
 //! Dual-licensed under MIT and Apache 2.0. See the [README](../README.md) for
 //! more details.
 
+#![allow(clippy::missing_safety_doc)]
+
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// Number of IPC configurations in `NrfxIpcConfig`

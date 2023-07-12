@@ -216,25 +216,11 @@ impl Default for NmeaMask {
 
 impl From<NmeaMask> for u16 {
     fn from(mask: NmeaMask) -> Self {
-        mask.gga
-            .then_some(nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GGA_MASK as u16)
-            .unwrap_or(0)
-            | mask
-                .gll
-                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GLL_MASK as u16)
-                .unwrap_or(0)
-            | mask
-                .gsa
-                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GSA_MASK as u16)
-                .unwrap_or(0)
-            | mask
-                .gsv
-                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GSV_MASK as u16)
-                .unwrap_or(0)
-            | mask
-                .rmc
-                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_NMEA_RMC_MASK as u16)
-                .unwrap_or(0)
+        (mask.gga as u16 * nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GGA_MASK as u16)
+            | (mask.gll as u16 * nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GLL_MASK as u16)
+            | (mask.gsa as u16 * nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GSA_MASK as u16)
+            | (mask.gsv as u16 * nrfxlib_sys::NRF_MODEM_GNSS_NMEA_GSV_MASK as u16)
+            | (mask.rmc as u16 * nrfxlib_sys::NRF_MODEM_GNSS_NMEA_RMC_MASK as u16)
     }
 }
 
@@ -320,7 +306,7 @@ impl Default for GnssConfig {
 }
 
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct GnssUsecase {
     /// Low accuracy fixes allowed.
     ///
@@ -341,26 +327,12 @@ pub struct GnssUsecase {
     pub scheduled_downloads_disable: bool,
 }
 
-impl Default for GnssUsecase {
-    fn default() -> Self {
-        Self {
-            low_accuracy: false,
-            scheduled_downloads_disable: false,
-        }
-    }
-}
-
 impl From<GnssUsecase> for u8 {
     fn from(usecase: GnssUsecase) -> Self {
         nrfxlib_sys::NRF_MODEM_GNSS_USE_CASE_MULTIPLE_HOT_START as u8
-            | usecase
-                .low_accuracy
-                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_USE_CASE_LOW_ACCURACY as u8)
-                .unwrap_or(0)
-            | usecase
-                .scheduled_downloads_disable
-                .then_some(nrfxlib_sys::NRF_MODEM_GNSS_USE_CASE_SCHED_DOWNLOAD_DISABLE as u8)
-                .unwrap_or(0)
+            | (usecase.low_accuracy as u8 * nrfxlib_sys::NRF_MODEM_GNSS_USE_CASE_LOW_ACCURACY as u8)
+            | (usecase.scheduled_downloads_disable as u8
+                * nrfxlib_sys::NRF_MODEM_GNSS_USE_CASE_SCHED_DOWNLOAD_DISABLE as u8)
     }
 }
 
