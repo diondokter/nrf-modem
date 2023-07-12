@@ -14,14 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: stable
-          override: true
-          components: clippy, rustfmt
+          components: clippy, rustfmt, llvm-tools-preview
+          targets: thumbv8m.main-none-eabihf
 
+      - run: cargo install cargo-binutils
       - run: cargo fmt -- --check
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo clippy --target thumbv8m.main-none-eabihf
