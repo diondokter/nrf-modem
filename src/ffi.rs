@@ -407,10 +407,10 @@ pub unsafe fn nrf_ipc_irq_handler() {
 /// - 0 on success, a negative errno otherwise.
 #[no_mangle]
 pub unsafe extern "C" fn nrf_modem_os_sem_init(
-    sem: *mut *mut nrfxlib_sys::ctypes::c_void,
-    initial_count: nrfxlib_sys::ctypes::c_uint,
-    limit: nrfxlib_sys::ctypes::c_uint,
-) -> nrfxlib_sys::ctypes::c_int {
+    sem: *mut *mut core::ffi::c_void,
+    initial_count: core::ffi::c_uint,
+    limit: core::ffi::c_uint,
+) -> core::ffi::c_int {
     if sem.is_null() || initial_count > limit {
         return -(nrfxlib_sys::NRF_EINVAL as i32);
     }
@@ -442,7 +442,7 @@ pub unsafe extern "C" fn nrf_modem_os_sem_init(
 /// **Parameters**
 /// - sem – The semaphore.
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_sem_give(sem: *mut nrfxlib_sys::ctypes::c_void) {
+pub extern "C" fn nrf_modem_os_sem_give(sem: *mut core::ffi::c_void) {
     unsafe {
         if sem.is_null() {
             return;
@@ -471,9 +471,9 @@ pub extern "C" fn nrf_modem_os_sem_give(sem: *mut nrfxlib_sys::ctypes::c_void) {
 /// - -NRF_EAGAIN – If the semaphore could not be taken.
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_sem_take(
-    sem: *mut nrfxlib_sys::ctypes::c_void,
-    mut timeout: nrfxlib_sys::ctypes::c_int,
-) -> nrfxlib_sys::ctypes::c_int {
+    sem: *mut core::ffi::c_void,
+    mut timeout: core::ffi::c_int,
+) -> core::ffi::c_int {
     unsafe {
         if sem.is_null() {
             return -(nrfxlib_sys::NRF_EAGAIN as i32);
@@ -521,8 +521,8 @@ pub extern "C" fn nrf_modem_os_sem_take(
 /// - Current semaphore count.
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_sem_count_get(
-    sem: *mut nrfxlib_sys::ctypes::c_void,
-) -> nrfxlib_sys::ctypes::c_uint {
+    sem: *mut core::ffi::c_void,
+) -> core::ffi::c_uint {
     unsafe {
         if sem.is_null() {
             return 0;

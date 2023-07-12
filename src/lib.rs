@@ -125,7 +125,7 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
     }
 
     // OK, let's start the library
-    unsafe { nrfxlib_sys::nrf_modem_init(&params, nrfxlib_sys::nrf_modem_mode_NORMAL_MODE) }
+    unsafe { nrfxlib_sys::nrf_modem_init(&params) }
         .into_result()?;
 
     // Initialize AT notifications
@@ -166,19 +166,11 @@ unsafe extern "C" fn modem_fault_handler(_info: *mut nrfxlib_sys::nrf_modem_faul
     );
 }
 
-/// You must call this when an EGU1 interrupt occurs.
-pub fn application_irq_handler() {
-    unsafe {
-        nrfxlib_sys::nrf_modem_application_irq_handler();
-        nrfxlib_sys::nrf_modem_os_event_notify();
-    }
-}
-
 /// IPC code now lives outside `lib_modem`, so call our IPC handler function.
 pub fn ipc_irq_handler() {
     unsafe {
         crate::ffi::nrf_ipc_irq_handler();
-        nrfxlib_sys::nrf_modem_os_event_notify();
+        nrfxlib_sys::nrf_modem_os_event_notify(0);
         crate::socket::wake_sockets();
     }
 }

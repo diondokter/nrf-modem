@@ -20,6 +20,5 @@ jobs:
           components: clippy, rustfmt, llvm-tools-preview
           targets: thumbv8m.main-none-eabihf
 
-      - run: cargo install cargo-binutils
       - run: cargo fmt -- --check
       - run: cargo clippy --target thumbv8m.main-none-eabihf

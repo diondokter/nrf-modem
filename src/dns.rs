@@ -69,7 +69,7 @@ pub async fn get_host_by_name_with_cancellation(
         hostname.push('\0');
 
         let err = nrfxlib_sys::nrf_getaddrinfo(
-            hostname.as_ptr(),
+            hostname.as_ptr() as *const core::ffi::c_char,
             core::ptr::null(),
             &hints as *const _,
             &mut result as *mut *mut _,

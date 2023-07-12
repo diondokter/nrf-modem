@@ -593,12 +593,12 @@ impl<'a> SocketOption<'a> {
         }
     }
 
-    pub(crate) fn get_value(&self) -> *const nrfxlib_sys::ctypes::c_void {
+    pub(crate) fn get_value(&self) -> *const core::ffi::c_void {
         match self {
-            SocketOption::TlsHostName(s) => s.as_ptr() as *const nrfxlib_sys::ctypes::c_void,
-            SocketOption::TlsPeerVerify(x) => x as *const _ as *const nrfxlib_sys::ctypes::c_void,
-            SocketOption::TlsSessionCache(x) => x as *const _ as *const nrfxlib_sys::ctypes::c_void,
-            SocketOption::TlsTagList(x) => x.as_ptr() as *const nrfxlib_sys::ctypes::c_void,
+            SocketOption::TlsHostName(s) => s.as_ptr() as *const core::ffi::c_void,
+            SocketOption::TlsPeerVerify(x) => x as *const _ as *const core::ffi::c_void,
+            SocketOption::TlsSessionCache(x) => x as *const _ as *const core::ffi::c_void,
+            SocketOption::TlsTagList(x) => x.as_ptr() as *const core::ffi::c_void,
         }
     }
 

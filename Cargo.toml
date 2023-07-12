@@ -13,7 +13,7 @@ keywords = ["nRF9160", "LTE", "GPS", "NB-IoT", "embedded"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nrfxlib-sys = "2.1.0"
+nrfxlib-sys = { git = "https://github.com/diondokter/nrfxlib-sys.git", branch = "develop" }
 futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
 num_enum = { version = "0.6.1", default-features = false }
 defmt = { version = "0.3.2", optional = true }
