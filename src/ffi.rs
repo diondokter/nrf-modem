@@ -75,33 +75,15 @@ static IPC_CONTEXT: core::sync::atomic::AtomicUsize = core::sync::atomic::Atomic
 /// Remembers the IPC handler function we were given
 static IPC_HANDLER: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
-/// Function required by BSD library. We need to set the EGU1 interrupt.
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_application_irq_set() {
-    cortex_m::peripheral::NVIC::pend(nrf9160_pac::Interrupt::EGU1);
-}
-
-/// Function required by BSD library. We need to clear the EGU1 interrupt.
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_application_irq_clear() {
-    cortex_m::peripheral::NVIC::unpend(nrf9160_pac::Interrupt::EGU1);
-}
-
-/// Function required by BSD library. We need to set the EGU2 interrupt.
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_trace_irq_set() {
-    cortex_m::peripheral::NVIC::pend(nrf9160_pac::Interrupt::EGU2);
-}
-
-/// Function required by BSD library. We need to clear the EGU2 interrupt.
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_trace_irq_clear() {
-    cortex_m::peripheral::NVIC::unpend(nrf9160_pac::Interrupt::EGU2);
-}
-
 /// Function required by BSD library. We have no init to do.
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_init() {
+    // Nothing
+}
+
+/// Function required by BSD library. We have no shutdown to do.
+#[no_mangle]
+pub extern "C" fn nrf_modem_os_shutdown() {
     // Nothing
 }
 
@@ -177,19 +159,6 @@ pub extern "C" fn nrf_modem_os_event_notify() {
     NOTIFY_ACTIVE.store(true, Ordering::SeqCst);
 }
 
-/// Function required by BSD library
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_trace_put(_data: *const u8, _len: u32) -> i32 {
-    // Do nothing
-    0
-}
-
-/// Function required by BSD library
-#[no_mangle]
-pub extern "C" fn nrf_modem_irrecoverable_error_handler(err: u32) -> ! {
-    panic!("bsd_irrecoverable_error_handler({})", err);
-}
-
 /// The Modem library needs to dynamically allocate memory (a heap) for proper
 /// functioning. This memory is used to store the internal data structures that
 /// are used to manage the communication between the application core and the
@@ -229,16 +198,6 @@ pub unsafe extern "C" fn nrf_modem_os_shm_tx_free(ptr: *mut u8) {
     generic_free(ptr, &crate::TX_ALLOCATOR);
 }
 
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_trace_alloc(_bytes: usize) -> *mut u8 {
-    unimplemented!()
-}
-
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_trace_free(_mem: *mut u8) {
-    unimplemented!()
-}
-
 /// @brief Function for loading configuration directly into IPC peripheral.
 ///
 /// @param p_config Pointer to the structure with the initial configuration.
@@ -260,7 +219,6 @@ pub unsafe extern "C" fn nrfx_ipc_config_load(p_config: *const NrfxIpcConfig) {
         .write(|w| w.bits(config.receive_events_enabled));
 }
 
-///
 /// @brief Function for initializing the IPC driver.
 ///
 /// @param irq_priority Interrupt priority.
@@ -386,11 +344,17 @@ pub unsafe fn nrf_ipc_irq_handler() {
         (*nrf9160_pac::IPC_NS::ptr()).events_receive[event_idx as usize].write(|w| w.bits(0));
     }
 
+    #[cfg(feature = "defmt")]
+    defmt::trace!("IPC start");
+
     // Execute interrupt handler to provide information about events to app
     let handler_addr = IPC_HANDLER.load(core::sync::atomic::Ordering::SeqCst);
     let handler = core::mem::transmute::<usize, NrfxIpcHandler>(handler_addr);
     let context = IPC_CONTEXT.load(core::sync::atomic::Ordering::SeqCst);
     (handler)(events_map, context as *mut u8);
+
+    #[cfg(feature = "defmt")]
+    defmt::trace!("IPC done");
 }
 
 /// Initialize a semaphore.

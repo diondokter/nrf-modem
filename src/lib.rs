@@ -93,22 +93,25 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
                 // At start of shared memory (see memory.x)
                 base: 0x2001_0000,
                 // This is the amount specified in the NCS 1.5.1 release.
-                size: 0x0000_04e8,
+                size: nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE,
             },
             tx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_2 {
                 // Follows on from control buffer
-                base: 0x2001_04e8,
+                base: 0x2001_0000 + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE,
                 // This is the amount specified in the NCS 1.5.1 release.
                 size: 0x0000_2000,
             },
             rx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_3 {
                 // Follows on from TX buffer
-                base: 0x2001_24e8,
+                base: 0x2001_0000 + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE + 0x2000,
                 // This is the amount specified in the NCS 1.5.1 release.
                 size: 0x0000_2000,
             },
             // No trace info
-            trace: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_4 { base: 0, size: 0 },
+            trace: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_4 {
+                base: 0x2001_0000,
+                size: 0,
+            },
         },
         ipc_irq_prio: 0,
         fault_handler: Some(modem_fault_handler),
@@ -125,8 +128,7 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
     }
 
     // OK, let's start the library
-    unsafe { nrfxlib_sys::nrf_modem_init(&params) }
-        .into_result()?;
+    unsafe { nrfxlib_sys::nrf_modem_init(&params) }.into_result()?;
 
     // Initialize AT notifications
     at_notifications::initialize()?;
