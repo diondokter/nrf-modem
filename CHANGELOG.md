@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3 (07-08-23)
+
+- Fixed issue where a split socket polled on two different tasks would not properly wake up one of the two tasks if both were waiting on the same socket. (#14)
+- Fixed the low-level semaphore implementation to make it wait the appropriate time (#16)
+
 ## 0.3.2 (24-04-23)
 
 - Fixed at notification issue where a too small string buffer would panic. Now the notification is truncated to the size of the string.

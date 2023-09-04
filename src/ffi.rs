@@ -465,11 +465,11 @@ pub extern "C" fn nrf_modem_os_sem_take(
             match timeout {
                 0 => return -(nrfxlib_sys::NRF_EAGAIN as i32),
                 nrfxlib_sys::NRF_MODEM_OS_FOREVER => {
-                    nrf_modem_os_busywait(1);
+                    nrf_modem_os_busywait(1000);
                 }
                 _ => {
                     timeout -= 1;
-                    nrf_modem_os_busywait(1);
+                    nrf_modem_os_busywait(1000);
                 }
             }
         }

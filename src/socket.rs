@@ -11,13 +11,13 @@ use critical_section::Mutex;
 use no_std_net::SocketAddr;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-const WAKER_INIT: Option<(Waker, i32)> = None;
+// use 16 slots for wakers instead of 8, which is the max number of sockets allowed, so they
+// are not overwritten when split into their rx/tx counterparts and run in separate tasks.
+const WAKER_SLOTS: usize = (nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT * 2) as usize;
+const WAKER_INIT: Option<(Waker, i32, SocketDirection)> = None;
 #[allow(clippy::type_complexity)]
-static SOCKET_WAKERS: Mutex<
-    RefCell<[Option<(Waker, i32)>; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize]>,
-> = Mutex::new(RefCell::new(
-    [WAKER_INIT; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize],
-));
+static SOCKET_WAKERS: Mutex<RefCell<[Option<(Waker, i32, SocketDirection)>; WAKER_SLOTS]>> =
+    Mutex::new(RefCell::new([WAKER_INIT; WAKER_SLOTS]));
 
 pub(crate) fn wake_sockets() {
     critical_section::with(|cs| {
@@ -25,38 +25,46 @@ pub(crate) fn wake_sockets() {
             .borrow_ref_mut(cs)
             .iter_mut()
             .for_each(|waker| {
-                if let Some((waker, _)) = waker.take() {
+                if let Some((waker, _, _)) = waker.take() {
                     waker.wake()
                 }
             })
     });
 }
 
-fn register_socket_waker(waker: Waker, socket_fd: i32) {
+fn register_socket_waker(waker: Waker, socket_fd: i32, socket_dir: SocketDirection) {
     critical_section::with(|cs| {
         // Get the wakers
         let mut wakers = SOCKET_WAKERS.borrow_ref_mut(cs);
 
         // Search for an empty spot or a spot that already stores the waker for the socket
-        let empty_waker = wakers
-            .iter_mut()
-            .find(|waker| waker.is_none() || waker.as_ref().map(|(_, fd)| *fd) == Some(socket_fd));
+        let empty_waker = wakers.iter_mut().find(|waker| {
+            waker.is_none()
+                || waker.as_ref().map(|(_, fd, dir)| (*fd, *dir)) == Some((socket_fd, socket_dir))
+        });
 
         if let Some(empty_waker) = empty_waker {
             // In principle we should always have an empty spot and run this code
-            *empty_waker = Some((waker, socket_fd));
+            *empty_waker = Some((waker, socket_fd, socket_dir));
         } else {
             // It shouldn't ever happen, but if there's no empty spot, we just evict the first socket
             // That socket will just reregister itself
             wakers
                 .first_mut()
                 .unwrap()
-                .replace((waker, socket_fd))
+                .replace((waker, socket_fd, socket_dir))
                 .unwrap()
                 .0
                 .wake();
         }
     });
+}
+
+/// Used as a identifier for wakers when a socket is split into RX/TX halves
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SocketDirection {
+    RX = 0,
+    TX = 1,
 }
 
 /// Internal socket implementation
@@ -196,7 +204,7 @@ impl Socket {
             // Cast the address to something the nrf-modem understands
             let address = NrfSockAddr::from(address);
 
-            register_socket_waker(cx.waker().clone(), self.fd);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::TX);
 
             // Do the connect call, this is non-blocking due to the socket setup
             let mut connect_result = unsafe {
@@ -270,7 +278,7 @@ impl Socket {
             // Cast the address to something the nrf-modem understands
             let address = NrfSockAddr::from(address);
 
-            register_socket_waker(cx.waker().clone(), self.fd);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::TX);
 
             // Do the bind call, this is non-blocking due to the socket setup
             let mut bind_result =
@@ -316,7 +324,7 @@ impl Socket {
                 return Poll::Ready(Err(Error::OperationCancelled));
             }
 
-            register_socket_waker(cx.waker().clone(), self.fd);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::TX);
 
             let mut send_result = unsafe {
                 nrfxlib_sys::nrf_send(self.fd, buffer.as_ptr() as *const _, buffer.len(), 0)
@@ -359,7 +367,7 @@ impl Socket {
                 return Poll::Ready(Err(Error::OperationCancelled));
             }
 
-            register_socket_waker(cx.waker().clone(), self.fd);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::RX);
 
             let mut receive_result = unsafe {
                 nrfxlib_sys::nrf_recv(self.fd, buffer.as_ptr() as *mut _, buffer.len(), 0)
@@ -408,7 +416,7 @@ impl Socket {
             let socket_addr_ptr = socket_addr_store.as_mut_ptr() as *mut nrfxlib_sys::nrf_sockaddr;
             let mut socket_addr_len = 0u32;
 
-            register_socket_waker(cx.waker().clone(), self.fd);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::RX);
 
             let mut receive_result = unsafe {
                 nrfxlib_sys::nrf_recvfrom(
@@ -464,7 +472,7 @@ impl Socket {
 
             let addr = NrfSockAddr::from(address);
 
-            register_socket_waker(cx.waker().clone(), self.fd);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::TX);
 
             let mut send_result = unsafe {
                 nrfxlib_sys::nrf_sendto(
