@@ -370,7 +370,7 @@ impl Socket {
             register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::RX);
 
             let mut receive_result = unsafe {
-                nrfxlib_sys::nrf_recv(self.fd, buffer.as_ptr() as *mut _, buffer.len(), 0)
+                nrfxlib_sys::nrf_recv(self.fd, buffer.as_mut_ptr() as *mut _, buffer.len(), 0)
             };
 
             if receive_result == -1 {
@@ -421,7 +421,7 @@ impl Socket {
             let mut receive_result = unsafe {
                 nrfxlib_sys::nrf_recvfrom(
                     self.fd,
-                    buffer.as_ptr() as *mut _,
+                    buffer.as_mut_ptr() as *mut _,
                     buffer.len(),
                     0,
                     socket_addr_ptr,
@@ -540,7 +540,7 @@ impl Drop for Socket {
             let e = unsafe { nrfxlib_sys::nrf_close(self.fd) };
 
             if e == -1 {
-                Result::<(), _>::Err(Error::NrfError(get_last_error())).unwrap();
+                panic!("{:?}", Error::NrfError(get_last_error()));
             }
         }
     }
