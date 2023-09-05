@@ -31,7 +31,8 @@ pub struct NrfxIpcConfig {
 }
 
 /// IPC callback function type
-type NrfxIpcHandler = extern "C" fn(event_mask: u32, ptr: *mut u8);
+// based on https://github.com/NordicSemiconductor/nrfx/blob/98d6f433313a3d8dcf08dce25e744617b45aa913/drivers/include/nrfx_ipc.h#L56
+type NrfxIpcHandler = extern "C" fn(event_idx: u8, ptr: *mut u8);
 
 /// IPC error type
 #[repr(u32)]
@@ -332,9 +333,26 @@ unsafe fn generic_free(ptr: *mut u8, heap: &crate::WrappedHeap) {
 
 /// Call this when we have an IPC IRQ. Not `extern C` as its not called by the
 /// library, only our interrupt handler code.
+// This function seems to be based on this verion in C:
+// https://github.com/NordicSemiconductor/nrfx/blob/98d6f433313a3d8dcf08dce25e744617b45aa913/drivers/src/nrfx_ipc.c#L146-L163
 pub unsafe fn nrf_ipc_irq_handler() {
     // Get the information about events that fired this interrupt
     let events_map = (*nrf9160_pac::IPC_NS::ptr()).intpend.read().bits();
+
+    #[cfg(feature = "defmt")]
+    defmt::trace!("IPC start");
+
+    // Fetch interrupt handler and context to use during event resolution
+    let handler_addr = IPC_HANDLER.load(core::sync::atomic::Ordering::SeqCst);
+    let handler = if handler_addr != 0 {
+        let handler = core::mem::transmute::<usize, NrfxIpcHandler>(handler_addr);
+        Some(handler)
+    } else {
+        #[cfg(feature = "defmt")]
+        defmt::warn!("No IPC handler registered");
+        None
+    };
+    let context = IPC_CONTEXT.load(core::sync::atomic::Ordering::SeqCst);
 
     // Clear these events
     let mut bitmask = events_map;
@@ -342,16 +360,15 @@ pub unsafe fn nrf_ipc_irq_handler() {
         let event_idx = bitmask.trailing_zeros();
         bitmask &= !(1 << event_idx);
         (*nrf9160_pac::IPC_NS::ptr()).events_receive[event_idx as usize].write(|w| w.bits(0));
+
+        // Execute interrupt handler to provide information about events to app
+        if let Some(handler) = handler {
+            let event_idx = event_idx
+                .try_into()
+                .expect("A u32 has less then 255 trailing zeroes");
+            (handler)(event_idx, context as *mut u8);
+        }
     }
-
-    #[cfg(feature = "defmt")]
-    defmt::trace!("IPC start");
-
-    // Execute interrupt handler to provide information about events to app
-    let handler_addr = IPC_HANDLER.load(core::sync::atomic::Ordering::SeqCst);
-    let handler = core::mem::transmute::<usize, NrfxIpcHandler>(handler_addr);
-    let context = IPC_CONTEXT.load(core::sync::atomic::Ordering::SeqCst);
-    (handler)(events_map, context as *mut u8);
 
     #[cfg(feature = "defmt")]
     defmt::trace!("IPC done");

@@ -13,18 +13,25 @@ keywords = ["nRF9160", "LTE", "GPS", "NB-IoT", "embedded"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nrfxlib-sys = { git = "https://github.com/diondokter/nrfxlib-sys.git", branch = "develop" }
-futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
+nrfxlib-sys = "2.4.2"
+futures = { version = "0.3.24", default-features = false, features = [
+    "async-await",
+] }
 num_enum = { version = "0.6.1", default-features = false }
 defmt = { version = "0.3.2", optional = true }
 cortex-m = "0.7"
-linked_list_allocator = { version="0.10.1", default-features=false, features=["use_spin"] }
+linked_list_allocator = { version = "0.10.1", default-features = false, features = [
+    "use_spin",
+] }
 nrf9160-pac = "0.12.2"
 arrayvec = { version = "0.7", default-features = false }
 at-commands = "0.5.2"
 no-std-net = "0.6.0"
 critical-section = "1.1"
 embassy-sync = "0.2.0"
+
+[patch.crates-io]
+nrfxlib-sys = { path = "../nrfxlib-sys" }
 
 [features]
 default = []
