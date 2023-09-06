@@ -339,9 +339,6 @@ pub unsafe fn nrf_ipc_irq_handler() {
     // Get the information about events that fired this interrupt
     let events_map = (*nrf9160_pac::IPC_NS::ptr()).intpend.read().bits();
 
-    #[cfg(feature = "defmt")]
-    defmt::trace!("IPC start");
-
     // Fetch interrupt handler and context to use during event resolution
     let handler_addr = IPC_HANDLER.load(core::sync::atomic::Ordering::SeqCst);
     let handler = if handler_addr != 0 {
@@ -369,9 +366,6 @@ pub unsafe fn nrf_ipc_irq_handler() {
             (handler)(event_idx, context as *mut u8);
         }
     }
-
-    #[cfg(feature = "defmt")]
-    defmt::trace!("IPC done");
 }
 
 /// Initialize a semaphore.
