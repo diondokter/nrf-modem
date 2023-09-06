@@ -495,9 +495,7 @@ pub extern "C" fn nrf_modem_os_sem_take(
 /// **Returns**
 /// - Current semaphore count.
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_sem_count_get(
-    sem: *mut core::ffi::c_void,
-) -> core::ffi::c_uint {
+pub extern "C" fn nrf_modem_os_sem_count_get(sem: *mut core::ffi::c_void) -> core::ffi::c_uint {
     unsafe {
         if sem.is_null() {
             return 0;

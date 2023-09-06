@@ -31,7 +31,7 @@ critical-section = "1.1"
 embassy-sync = "0.2.0"
 
 [patch.crates-io]
-nrfxlib-sys = { path = "../nrfxlib-sys" }
+nrfxlib-sys = { git = "https://github.com/diondokter/nrfxlib-sys.git", branch = "develop" }
 
 [features]
 default = []
