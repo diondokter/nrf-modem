@@ -1,7 +1,7 @@
 //! Implementation of [LteLink]
 
 use crate::{at, at_notifications::AtNotificationStream, error::Error, CancellationToken};
-use core::{mem, ops::ControlFlow};
+use core::{mem, ops::ControlFlow, task::Poll};
 
 /// An object that keeps the modem connected.
 /// As long as there is an instance, the modem will be kept on.
@@ -77,7 +77,15 @@ impl LteLink {
         let mut stream = notification_stream
             .map(|notif| Self::get_cereg_stat_control_flow(Self::parse_cereg(notif.as_str())));
 
-        while let Some(cereg) = stream.next().await {
+        while let Some(cereg) = core::future::poll_fn(|cx| {
+            if token.is_cancelled() {
+                Poll::Ready(None)
+            } else {
+                stream.poll_next_unpin(cx)
+            }
+        })
+        .await
+        {
             match cereg {
                 ControlFlow::Continue(_) => {
                     token.as_result()?;
@@ -85,6 +93,8 @@ impl LteLink {
                 ControlFlow::Break(result) => return result,
             }
         }
+
+        token.as_result()?;
 
         unreachable!()
     }
