@@ -31,7 +31,8 @@ pub struct NrfxIpcConfig {
 }
 
 /// IPC callback function type
-type NrfxIpcHandler = extern "C" fn(event_mask: u32, ptr: *mut u8);
+// based on https://github.com/NordicSemiconductor/nrfx/blob/98d6f433313a3d8dcf08dce25e744617b45aa913/drivers/include/nrfx_ipc.h#L56
+type NrfxIpcHandler = extern "C" fn(event_idx: u8, ptr: *mut u8);
 
 /// IPC error type
 #[repr(u32)]
@@ -75,33 +76,15 @@ static IPC_CONTEXT: core::sync::atomic::AtomicUsize = core::sync::atomic::Atomic
 /// Remembers the IPC handler function we were given
 static IPC_HANDLER: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
-/// Function required by BSD library. We need to set the EGU1 interrupt.
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_application_irq_set() {
-    cortex_m::peripheral::NVIC::pend(nrf9160_pac::Interrupt::EGU1);
-}
-
-/// Function required by BSD library. We need to clear the EGU1 interrupt.
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_application_irq_clear() {
-    cortex_m::peripheral::NVIC::unpend(nrf9160_pac::Interrupt::EGU1);
-}
-
-/// Function required by BSD library. We need to set the EGU2 interrupt.
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_trace_irq_set() {
-    cortex_m::peripheral::NVIC::pend(nrf9160_pac::Interrupt::EGU2);
-}
-
-/// Function required by BSD library. We need to clear the EGU2 interrupt.
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_trace_irq_clear() {
-    cortex_m::peripheral::NVIC::unpend(nrf9160_pac::Interrupt::EGU2);
-}
-
 /// Function required by BSD library. We have no init to do.
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_init() {
+    // Nothing
+}
+
+/// Function required by BSD library. We have no shutdown to do.
+#[no_mangle]
+pub extern "C" fn nrf_modem_os_shutdown() {
     // Nothing
 }
 
@@ -177,19 +160,6 @@ pub extern "C" fn nrf_modem_os_event_notify() {
     NOTIFY_ACTIVE.store(true, Ordering::SeqCst);
 }
 
-/// Function required by BSD library
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_trace_put(_data: *const u8, _len: u32) -> i32 {
-    // Do nothing
-    0
-}
-
-/// Function required by BSD library
-#[no_mangle]
-pub extern "C" fn nrf_modem_irrecoverable_error_handler(err: u32) -> ! {
-    panic!("bsd_irrecoverable_error_handler({})", err);
-}
-
 /// The Modem library needs to dynamically allocate memory (a heap) for proper
 /// functioning. This memory is used to store the internal data structures that
 /// are used to manage the communication between the application core and the
@@ -229,16 +199,6 @@ pub unsafe extern "C" fn nrf_modem_os_shm_tx_free(ptr: *mut u8) {
     generic_free(ptr, &crate::TX_ALLOCATOR);
 }
 
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_trace_alloc(_bytes: usize) -> *mut u8 {
-    unimplemented!()
-}
-
-#[no_mangle]
-pub extern "C" fn nrf_modem_os_trace_free(_mem: *mut u8) {
-    unimplemented!()
-}
-
 /// @brief Function for loading configuration directly into IPC peripheral.
 ///
 /// @param p_config Pointer to the structure with the initial configuration.
@@ -260,7 +220,6 @@ pub unsafe extern "C" fn nrfx_ipc_config_load(p_config: *const NrfxIpcConfig) {
         .write(|w| w.bits(config.receive_events_enabled));
 }
 
-///
 /// @brief Function for initializing the IPC driver.
 ///
 /// @param irq_priority Interrupt priority.
@@ -374,9 +333,23 @@ unsafe fn generic_free(ptr: *mut u8, heap: &crate::WrappedHeap) {
 
 /// Call this when we have an IPC IRQ. Not `extern C` as its not called by the
 /// library, only our interrupt handler code.
+// This function seems to be based on this verion in C:
+// https://github.com/NordicSemiconductor/nrfx/blob/98d6f433313a3d8dcf08dce25e744617b45aa913/drivers/src/nrfx_ipc.c#L146-L163
 pub unsafe fn nrf_ipc_irq_handler() {
     // Get the information about events that fired this interrupt
     let events_map = (*nrf9160_pac::IPC_NS::ptr()).intpend.read().bits();
+
+    // Fetch interrupt handler and context to use during event resolution
+    let handler_addr = IPC_HANDLER.load(core::sync::atomic::Ordering::SeqCst);
+    let handler = if handler_addr != 0 {
+        let handler = core::mem::transmute::<usize, NrfxIpcHandler>(handler_addr);
+        Some(handler)
+    } else {
+        #[cfg(feature = "defmt")]
+        defmt::warn!("No IPC handler registered");
+        None
+    };
+    let context = IPC_CONTEXT.load(core::sync::atomic::Ordering::SeqCst);
 
     // Clear these events
     let mut bitmask = events_map;
@@ -384,13 +357,15 @@ pub unsafe fn nrf_ipc_irq_handler() {
         let event_idx = bitmask.trailing_zeros();
         bitmask &= !(1 << event_idx);
         (*nrf9160_pac::IPC_NS::ptr()).events_receive[event_idx as usize].write(|w| w.bits(0));
-    }
 
-    // Execute interrupt handler to provide information about events to app
-    let handler_addr = IPC_HANDLER.load(core::sync::atomic::Ordering::SeqCst);
-    let handler = core::mem::transmute::<usize, NrfxIpcHandler>(handler_addr);
-    let context = IPC_CONTEXT.load(core::sync::atomic::Ordering::SeqCst);
-    (handler)(events_map, context as *mut u8);
+        // Execute interrupt handler to provide information about events to app
+        if let Some(handler) = handler {
+            let event_idx = event_idx
+                .try_into()
+                .expect("A u32 has less then 255 trailing zeroes");
+            (handler)(event_idx, context as *mut u8);
+        }
+    }
 }
 
 /// Initialize a semaphore.
@@ -407,10 +382,10 @@ pub unsafe fn nrf_ipc_irq_handler() {
 /// - 0 on success, a negative errno otherwise.
 #[no_mangle]
 pub unsafe extern "C" fn nrf_modem_os_sem_init(
-    sem: *mut *mut nrfxlib_sys::ctypes::c_void,
-    initial_count: nrfxlib_sys::ctypes::c_uint,
-    limit: nrfxlib_sys::ctypes::c_uint,
-) -> nrfxlib_sys::ctypes::c_int {
+    sem: *mut *mut core::ffi::c_void,
+    initial_count: core::ffi::c_uint,
+    limit: core::ffi::c_uint,
+) -> core::ffi::c_int {
     if sem.is_null() || initial_count > limit {
         return -(nrfxlib_sys::NRF_EINVAL as i32);
     }
@@ -442,7 +417,7 @@ pub unsafe extern "C" fn nrf_modem_os_sem_init(
 /// **Parameters**
 /// - sem – The semaphore.
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_sem_give(sem: *mut nrfxlib_sys::ctypes::c_void) {
+pub extern "C" fn nrf_modem_os_sem_give(sem: *mut core::ffi::c_void) {
     unsafe {
         if sem.is_null() {
             return;
@@ -471,9 +446,9 @@ pub extern "C" fn nrf_modem_os_sem_give(sem: *mut nrfxlib_sys::ctypes::c_void) {
 /// - -NRF_EAGAIN – If the semaphore could not be taken.
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_sem_take(
-    sem: *mut nrfxlib_sys::ctypes::c_void,
-    mut timeout: nrfxlib_sys::ctypes::c_int,
-) -> nrfxlib_sys::ctypes::c_int {
+    sem: *mut core::ffi::c_void,
+    mut timeout: core::ffi::c_int,
+) -> core::ffi::c_int {
     unsafe {
         if sem.is_null() {
             return -(nrfxlib_sys::NRF_EAGAIN as i32);
@@ -520,9 +495,7 @@ pub extern "C" fn nrf_modem_os_sem_take(
 /// **Returns**
 /// - Current semaphore count.
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_sem_count_get(
-    sem: *mut nrfxlib_sys::ctypes::c_void,
-) -> nrfxlib_sys::ctypes::c_uint {
+pub extern "C" fn nrf_modem_os_sem_count_get(sem: *mut core::ffi::c_void) -> core::ffi::c_uint {
     unsafe {
         if sem.is_null() {
             return 0;

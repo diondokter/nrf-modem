@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0 (2023-09-07)
+
+- Update nrfxlib-sys to 2.4.2, removing the need for the `EGU1` interrupt
+
 ## 0.3.4 (05-09-23)
 
 - Fixed issue where LTE link waiting couldn't be cancelled

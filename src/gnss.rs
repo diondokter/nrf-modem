@@ -416,7 +416,7 @@ impl GnssData {
                     )
                     .into_result()?;
 
-                    let data = data.assume_init().nmea_str;
+                    let data = core::mem::transmute(data.assume_init().nmea_str); // Make data be u8
                     let mut string_data = ArrayString::from_byte_string(&data)?;
                     string_data.truncate(
                         string_data

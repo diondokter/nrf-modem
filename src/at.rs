@@ -31,7 +31,9 @@ static AT_DATA_WAKER: AtomicWaker = AtomicWaker::new();
 
 /// The callback that will be called by nrfxlib when the at command has a response.
 /// The `resp` is a null-terminated string.
-unsafe extern "C" fn at_callback(resp: *const u8) {
+unsafe extern "C" fn at_callback(resp: *const core::ffi::c_char) {
+    let resp = resp as *const u8;
+
     #[cfg(feature = "defmt")]
     defmt::trace!(
         "AT <- {}",
@@ -102,7 +104,7 @@ pub fn send_at_blocking<const CAP: usize>(command: &str) -> Result<ArrayString<C
             nrfxlib_sys::nrf_modem_at_cmd(
                 buffer.as_mut_ptr() as _,
                 buffer.len(),
-                b"%.*s\0".as_ptr(),
+                b"%.*s\0".as_ptr() as *const core::ffi::c_char,
                 command.len(),
                 command.as_ptr(),
             )
@@ -114,8 +116,12 @@ pub fn send_at_blocking<const CAP: usize>(command: &str) -> Result<ArrayString<C
         return_string
     } else {
         unsafe {
-            nrfxlib_sys::nrf_modem_at_printf(b"%.*s\0".as_ptr(), command.len(), command.as_ptr())
-                .into_result()?;
+            nrfxlib_sys::nrf_modem_at_printf(
+                b"%.*s\0".as_ptr() as *const core::ffi::c_char,
+                command.len(),
+                command.as_ptr(),
+            )
+            .into_result()?;
         }
 
         ArrayString::new()
@@ -169,7 +175,7 @@ impl<'c, const CAP: usize> Future for SendATFuture<'c, CAP> {
                 let result = unsafe {
                     nrfxlib_sys::nrf_modem_at_cmd_async(
                         Some(at_callback),
-                        b"%.*s\0".as_ptr(),
+                        b"%.*s\0".as_ptr() as *const core::ffi::c_char,
                         self.command.len(),
                         self.command.as_ptr(),
                     )
