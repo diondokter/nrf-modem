@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.5 (07-09-23)
+
+- Pin nrfxlib version to it doesn't update to an incompatible new version
+
 ## 0.3.4 (05-09-23)
 
 - Fixed issue where LTE link waiting couldn't be cancelled
