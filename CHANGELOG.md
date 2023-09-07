@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0 (2023-09-07)
+
+- Update nrfxlib-sys to 2.4.2, removing the need for the `EGU1` interrupt
+
 ## 0.3.3 (07-08-23)
 
 - Fixed issue where a split socket polled on two different tasks would not properly wake up one of the two tasks if both were waiting on the same socket. (#14)
