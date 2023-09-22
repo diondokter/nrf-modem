@@ -7,9 +7,15 @@ use crate::socket::SocketOptionError;
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[non_exhaustive]
+/// The global error type of this crate
 pub enum Error {
+    /// An operation was tried for which the modem needs to be initialized, but the modem is not yet initialized
     ModemNotInitialized,
+    /// There can only be one Gnss instance, yet a second was requested
     GnssAlreadyTaken,
+    /// An unkown error occured. Check [nrf_errno.h](https://github.com/nrfconnect/sdk-nrfxlib/blob/main/nrf_modem/include/nrf_errno.h) to see what it means.
+    /// 
+    /// Sometimes the sign is flipped, but ignore that and just look at the number.
     NrfError(isize),
     BufferTooSmall(Option<usize>),
     OutOfMemory,
@@ -30,6 +36,8 @@ pub enum Error {
     Disconnected,
     TooManyLteLinks,
     InternalRuntimeMutexLocked,
+    /// The given memory layout falls outside of the acceptable range
+    BadMemoryLayout,
 }
 
 pub trait ErrorSource {

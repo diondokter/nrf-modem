@@ -16,6 +16,7 @@ use core::{mem, ops::ControlFlow, task::Poll};
 ///
 /// The user can prevent this by creating his own instance that the user only drops when all network tasks are done.
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct LteLink(());
 
 impl LteLink {

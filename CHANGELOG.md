@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 (2023-09-22)
+
+- Added a new modem init function where the memory layout can be manually specified
+- Sockets now use the built-in nrfxlib callbacks instead of waking at every IPC interrupt
+
 ## 0.4.0 (2023-09-07)
 
 - Update nrfxlib-sys to 2.4.2, removing the need for the `EGU1` interrupt

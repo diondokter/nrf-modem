@@ -3,7 +3,7 @@ use crate::{
 };
 use core::{
     cell::RefCell,
-    ops::{Deref, Neg},
+    ops::{BitOr, BitOrAssign, Deref, Neg},
     sync::atomic::{AtomicU8, Ordering},
     task::{Poll, Waker},
 };
@@ -19,16 +19,22 @@ const WAKER_INIT: Option<(Waker, i32, SocketDirection)> = None;
 static SOCKET_WAKERS: Mutex<RefCell<[Option<(Waker, i32, SocketDirection)>; WAKER_SLOTS]>> =
     Mutex::new(RefCell::new([WAKER_INIT; WAKER_SLOTS]));
 
-pub(crate) fn wake_sockets() {
+fn wake_sockets(socket_fd: i32, socket_dir: SocketDirection) {
     critical_section::with(|cs| {
         SOCKET_WAKERS
             .borrow_ref_mut(cs)
             .iter_mut()
-            .for_each(|waker| {
-                if let Some((waker, _, _)) = waker.take() {
-                    waker.wake()
+            .filter(|slot| {
+                if let Some((_, fd, dir)) = slot {
+                    *fd == socket_fd && dir.same_direction(socket_dir)
+                } else {
+                    false
                 }
             })
+            .for_each(|slot| {
+                let (waker, _, _) = slot.take().unwrap();
+                waker.wake();
+            });
     });
 }
 
@@ -60,15 +66,92 @@ fn register_socket_waker(waker: Waker, socket_fd: i32, socket_dir: SocketDirecti
     });
 }
 
+unsafe extern "C" fn socket_poll_callback(pollfd: *mut nrfxlib_sys::nrf_pollfd) {
+    let pollfd = *pollfd;
+
+    let mut direction = SocketDirection::Neither;
+
+    if pollfd.revents as u32 & nrfxlib_sys::NRF_POLLIN != 0 {
+        direction |= SocketDirection::In;
+    }
+
+    if pollfd.revents as u32 & nrfxlib_sys::NRF_POLLOUT != 0 {
+        direction |= SocketDirection::Out;
+    }
+
+    if pollfd.revents as u32
+        & (nrfxlib_sys::NRF_POLLERR | nrfxlib_sys::NRF_POLLHUP | nrfxlib_sys::NRF_POLLNVAL)
+        != 0
+    {
+        direction |= SocketDirection::Either;
+    }
+
+    #[cfg(feature = "defmt")]
+    defmt::trace!(
+        "Socket poll callback. fd: {}, revents: {:X}, direction: {}",
+        pollfd.fd,
+        pollfd.revents,
+        direction
+    );
+
+    wake_sockets(pollfd.fd, direction);
+}
+
 /// Used as a identifier for wakers when a socket is split into RX/TX halves
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 enum SocketDirection {
-    RX = 0,
-    TX = 1,
+    /// Neither option
+    Neither,
+    /// RX
+    In,
+    /// TX
+    Out,
+    /// RX and/or TX
+    Either,
+}
+
+impl BitOrAssign for SocketDirection {
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = *self | rhs;
+    }
+}
+
+impl BitOr for SocketDirection {
+    type Output = SocketDirection;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (SocketDirection::Neither, rhs) => rhs,
+            (lhs, SocketDirection::Neither) => lhs,
+            (SocketDirection::In, SocketDirection::In) => SocketDirection::In,
+            (SocketDirection::Out, SocketDirection::Out) => SocketDirection::Out,
+            (SocketDirection::In, SocketDirection::Out) => SocketDirection::Either,
+            (SocketDirection::Out, SocketDirection::In) => SocketDirection::Either,
+            (SocketDirection::Either, _) => SocketDirection::Either,
+            (_, SocketDirection::Either) => SocketDirection::Either,
+        }
+    }
+}
+
+impl SocketDirection {
+    fn same_direction(&self, other: Self) -> bool {
+        match (self, other) {
+            (SocketDirection::Neither, _) => false,
+            (_, SocketDirection::Neither) => false,
+            (SocketDirection::In, SocketDirection::In) => true,
+            (SocketDirection::Out, SocketDirection::Out) => true,
+            (SocketDirection::In, SocketDirection::Out) => false,
+            (SocketDirection::Out, SocketDirection::In) => false,
+            (_, SocketDirection::Either) => true,
+            (SocketDirection::Either, _) => true,
+        }
+    }
 }
 
 /// Internal socket implementation
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Socket {
     /// The file descriptor given by the modem lib
     fd: i32,
@@ -123,6 +206,27 @@ impl Socket {
                 fd,
                 nrfxlib_sys::NRF_F_SETFL as _,
                 nrfxlib_sys::NRF_O_NONBLOCK as _,
+            );
+
+            if result == -1 {
+                return Err(Error::NrfError(get_last_error()));
+            }
+        }
+
+        // Register the callback of the socket. This will be used to wake up the socket waker
+        let poll_callback = nrfxlib_sys::nrf_modem_pollcb {
+            callback: Some(socket_poll_callback),
+            events: (nrfxlib_sys::NRF_POLLIN | nrfxlib_sys::NRF_POLLOUT) as _, // All events
+            oneshot: false,
+        };
+
+        unsafe {
+            let result = nrfxlib_sys::nrf_setsockopt(
+                fd,
+                nrfxlib_sys::NRF_SOL_SOCKET as _,
+                nrfxlib_sys::NRF_SO_POLLCB as _,
+                (&poll_callback as *const nrfxlib_sys::nrf_modem_pollcb).cast(),
+                core::mem::size_of::<nrfxlib_sys::nrf_modem_pollcb>() as u32,
             );
 
             if result == -1 {
@@ -204,7 +308,7 @@ impl Socket {
             // Cast the address to something the nrf-modem understands
             let address = NrfSockAddr::from(address);
 
-            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::TX);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::Either);
 
             // Do the connect call, this is non-blocking due to the socket setup
             let mut connect_result = unsafe {
@@ -278,7 +382,7 @@ impl Socket {
             // Cast the address to something the nrf-modem understands
             let address = NrfSockAddr::from(address);
 
-            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::TX);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::Either);
 
             // Do the bind call, this is non-blocking due to the socket setup
             let mut bind_result =
@@ -324,7 +428,7 @@ impl Socket {
                 return Poll::Ready(Err(Error::OperationCancelled));
             }
 
-            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::TX);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::Out);
 
             let mut send_result = unsafe {
                 nrfxlib_sys::nrf_send(self.fd, buffer.as_ptr() as *const _, buffer.len(), 0)
@@ -367,7 +471,7 @@ impl Socket {
                 return Poll::Ready(Err(Error::OperationCancelled));
             }
 
-            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::RX);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::In);
 
             let mut receive_result = unsafe {
                 nrfxlib_sys::nrf_recv(self.fd, buffer.as_mut_ptr() as *mut _, buffer.len(), 0)
@@ -416,7 +520,7 @@ impl Socket {
             let socket_addr_ptr = socket_addr_store.as_mut_ptr() as *mut nrfxlib_sys::nrf_sockaddr;
             let mut socket_addr_len = 0u32;
 
-            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::RX);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::In);
 
             let mut receive_result = unsafe {
                 nrfxlib_sys::nrf_recvfrom(
@@ -472,7 +576,7 @@ impl Socket {
 
             let addr = NrfSockAddr::from(address);
 
-            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::TX);
+            register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::Out);
 
             let mut send_result = unsafe {
                 nrfxlib_sys::nrf_sendto(
@@ -555,6 +659,7 @@ impl Eq for Socket {}
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketFamily {
     Unspecified = nrfxlib_sys::NRF_AF_UNSPEC,
     Ipv4 = nrfxlib_sys::NRF_AF_INET,
@@ -564,6 +669,7 @@ pub enum SocketFamily {
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketType {
     Stream = nrfxlib_sys::NRF_SOCK_STREAM,
     Datagram = nrfxlib_sys::NRF_SOCK_DGRAM,
@@ -572,6 +678,7 @@ pub enum SocketType {
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketProtocol {
     IP = nrfxlib_sys::NRF_IPPROTO_IP,
     Tcp = nrfxlib_sys::NRF_IPPROTO_TCP,

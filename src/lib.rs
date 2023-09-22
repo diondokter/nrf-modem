@@ -5,6 +5,7 @@
 use crate::error::ErrorSource;
 use core::{
     cell::RefCell,
+    ops::Range,
     sync::atomic::{AtomicBool, Ordering},
 };
 use cortex_m::interrupt::Mutex;
@@ -69,6 +70,31 @@ pub(crate) static MODEM_RUNTIME_STATE: RuntimeState = RuntimeState::new();
 
 /// Start the NRF Modem library
 pub async fn init(mode: SystemMode) -> Result<(), Error> {
+    init_with_custom_layout(mode, Default::default()).await
+}
+
+/// Start the NRF Modem library with a manually specified memory layout
+pub async fn init_with_custom_layout(
+    mode: SystemMode,
+    memory_layout: MemoryLayout,
+) -> Result<(), Error> {
+    const SHARED_MEMORY_RANGE: Range<u32> = 0x2000_0000..0x2002_0000;
+
+    if !SHARED_MEMORY_RANGE.contains(&memory_layout.base_address) {
+        return Err(Error::BadMemoryLayout);
+    }
+    if !SHARED_MEMORY_RANGE.contains(
+        &(memory_layout.base_address
+                + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE
+                + memory_layout.tx_area_size
+                + memory_layout.rx_area_size
+                + memory_layout.trace_area_size
+                // Minus one, because this check should be inclusive
+                - 1),
+    ) {
+        return Err(Error::BadMemoryLayout);
+    }
+
     // The modem is only certified when the DC/DC converter is enabled and it isn't by default
     unsafe {
         (*nrf9160_pac::REGULATORS_NS::PTR)
@@ -90,27 +116,25 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
     let params = nrfxlib_sys::nrf_modem_init_params {
         shmem: nrfxlib_sys::nrf_modem_shmem_cfg {
             ctrl: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_1 {
-                // At start of shared memory (see memory.x)
-                base: 0x2001_0000,
-                // This is the amount specified in the NCS 1.5.1 release.
+                base: memory_layout.base_address,
                 size: nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE,
             },
             tx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_2 {
-                // Follows on from control buffer
-                base: 0x2001_0000 + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE,
-                // This is the amount specified in the NCS 1.5.1 release.
-                size: 0x0000_2000,
+                base: memory_layout.base_address + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE,
+                size: memory_layout.tx_area_size,
             },
             rx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_3 {
-                // Follows on from TX buffer
-                base: 0x2001_0000 + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE + 0x2000,
-                // This is the amount specified in the NCS 1.5.1 release.
-                size: 0x0000_2000,
+                base: memory_layout.base_address
+                    + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE
+                    + memory_layout.tx_area_size,
+                size: memory_layout.rx_area_size,
             },
-            // No trace info
             trace: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_4 {
-                base: 0x2001_0000,
-                size: 0,
+                base: memory_layout.base_address
+                    + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE
+                    + memory_layout.tx_area_size
+                    + memory_layout.rx_area_size,
+                size: memory_layout.trace_area_size,
             },
         },
         ipc_irq_prio: 0,
@@ -159,6 +183,35 @@ pub async fn init(mode: SystemMode) -> Result<(), Error> {
     Ok(())
 }
 
+/// The memory layout used by the modem library.
+///
+/// The full range needs to be in the lower 128k of ram.
+/// This also contains the fixed [nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE].
+///
+/// Nordic guide: https://developer.nordicsemi.com/nRF_Connect_SDK/doc/2.4.1/nrfxlib/nrf_modem/doc/architecture.html#shared-memory-configuration
+pub struct MemoryLayout {
+    /// The start of the memory area
+    pub base_address: u32,
+    /// The buffer size of the socket send operations, as well as sent AT commands and TLS certs
+    pub tx_area_size: u32,
+    /// The buffer size of the socket receive operations, as well as received AT commands, gnss messages and TLS certs
+    pub rx_area_size: u32,
+    /// The buffer size of the trace logs
+    pub trace_area_size: u32,
+}
+
+impl Default for MemoryLayout {
+    fn default() -> Self {
+        Self {
+            base_address: 0x2001_0000,
+            tx_area_size: 0x2000,
+            rx_area_size: 0x2000,
+            // Trace is not implemented yet
+            trace_area_size: 0,
+        }
+    }
+}
+
 unsafe extern "C" fn modem_fault_handler(_info: *mut nrfxlib_sys::nrf_modem_fault_info) {
     #[cfg(feature = "defmt")]
     defmt::error!(
@@ -172,9 +225,8 @@ unsafe extern "C" fn modem_fault_handler(_info: *mut nrfxlib_sys::nrf_modem_faul
 pub fn ipc_irq_handler() {
     unsafe {
         crate::ffi::nrf_ipc_irq_handler();
-        nrfxlib_sys::nrf_modem_os_event_notify(0);
-        crate::socket::wake_sockets();
     }
+    cortex_m::asm::sev();
 }
 
 /// Identifies which radios in the nRF9160 should be active

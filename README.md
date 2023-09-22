@@ -48,7 +48,6 @@ The `EGU1` and `IPC` interrupts must be routed to the modem software.
 #[allow(non_snake_case)]
 fn IPC() {
     nrf_modem::ipc_irq_handler();
-    cortex_m::asm::sev();
 }
 
 let mut cp = unwrap!(cortex_m::Peripherals::take());
