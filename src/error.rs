@@ -14,7 +14,7 @@ pub enum Error {
     /// There can only be one Gnss instance, yet a second was requested
     GnssAlreadyTaken,
     /// An unkown error occured. Check [nrf_errno.h](https://github.com/nrfconnect/sdk-nrfxlib/blob/main/nrf_modem/include/nrf_errno.h) to see what it means.
-    /// 
+    ///
     /// Sometimes the sign is flipped, but ignore that and just look at the number.
     NrfError(isize),
     BufferTooSmall(Option<usize>),
