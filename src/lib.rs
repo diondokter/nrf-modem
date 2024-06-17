@@ -113,6 +113,9 @@ pub async fn init_with_custom_layout(
     }
 
     // Tell nrf_modem what memory it can use.
+    static PARAMS: grounded::uninit::GroundedCell<nrfxlib_sys::nrf_modem_init_params> =
+        grounded::uninit::GroundedCell::uninit();
+
     let params = nrfxlib_sys::nrf_modem_init_params {
         shmem: nrfxlib_sys::nrf_modem_shmem_cfg {
             ctrl: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_1 {
@@ -141,6 +144,8 @@ pub async fn init_with_custom_layout(
         fault_handler: Some(modem_fault_handler),
     };
 
+    critical_section::with(|_| unsafe { PARAMS.get().write(params) });
+
     unsafe {
         // Use the same TX memory region as above
         cortex_m::interrupt::free(|cs| {
@@ -152,7 +157,7 @@ pub async fn init_with_custom_layout(
     }
 
     // OK, let's start the library
-    unsafe { nrfxlib_sys::nrf_modem_init(&params) }.into_result()?;
+    unsafe { nrfxlib_sys::nrf_modem_init(PARAMS.get()) }.into_result()?;
 
     // Initialize AT notifications
     at_notifications::initialize()?;

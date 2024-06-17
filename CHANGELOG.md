@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2 (2024-06-17)
+
+- Fixed a memory ownership issue in `nrf_modem_init`. The `nrf_modem_init_params` pointer given to the init must
+  have a static lifetime. This has been a stack variable since forever, including in the original `nrfxlib` rust crate.  
+  Originally this seems to have not been required, but this changed +-4 years ago
+  without documentation update from Nordic.
+
 ## 0.4.1 (2023-09-22)
 
 - Added a new modem init function where the memory layout can be manually specified

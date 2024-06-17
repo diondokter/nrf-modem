@@ -1,6 +1,6 @@
 [package]
 name = "nrf-modem"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 rust-version = "1.64"
 license = "MIT OR Apache-2.0"
@@ -25,6 +25,7 @@ at-commands = "0.5.2"
 no-std-net = "0.6.0"
 critical-section = "1.1"
 embassy-sync = "0.3.0"
+grounded = "0.2.0"
 
 [features]
 default = []
