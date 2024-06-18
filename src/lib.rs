@@ -8,7 +8,7 @@ use core::{
     ops::Range,
     sync::atomic::{AtomicBool, Ordering},
 };
-use cortex_m::interrupt::Mutex;
+use critical_section::Mutex;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use linked_list_allocator::Heap;
 
@@ -67,6 +67,7 @@ static LIBRARY_ALLOCATOR: WrappedHeap = Mutex::new(RefCell::new(None));
 static TX_ALLOCATOR: WrappedHeap = Mutex::new(RefCell::new(None));
 
 pub(crate) static MODEM_RUNTIME_STATE: RuntimeState = RuntimeState::new();
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Start the NRF Modem library
 pub async fn init(mode: SystemMode) -> Result<(), Error> {
@@ -78,6 +79,10 @@ pub async fn init_with_custom_layout(
     mode: SystemMode,
     memory_layout: MemoryLayout,
 ) -> Result<(), Error> {
+    if INITIALIZED.fetch_or(true, Ordering::SeqCst) {
+        return Err(Error::ModemAlreadyInitialized);
+    }
+
     const SHARED_MEMORY_RANGE: Range<u32> = 0x2000_0000..0x2002_0000;
 
     if !SHARED_MEMORY_RANGE.contains(&memory_layout.base_address) {
@@ -107,7 +112,7 @@ pub async fn init_with_custom_layout(
         static mut HEAP_MEMORY: [u32; 1024] = [0u32; 1024];
         let heap_start = HEAP_MEMORY.as_ptr() as *mut u8;
         let heap_size = HEAP_MEMORY.len() * core::mem::size_of::<u32>();
-        cortex_m::interrupt::free(|cs| {
+        critical_section::with(|cs| {
             *LIBRARY_ALLOCATOR.borrow(cs).borrow_mut() = Some(Heap::new(heap_start, heap_size))
         });
     }
@@ -148,7 +153,7 @@ pub async fn init_with_custom_layout(
 
     unsafe {
         // Use the same TX memory region as above
-        cortex_m::interrupt::free(|cs| {
+        critical_section::with(|cs| {
             *TX_ALLOCATOR.borrow(cs).borrow_mut() = Some(Heap::new(
                 params.shmem.tx.base as usize as *mut u8,
                 params.shmem.tx.size as usize,

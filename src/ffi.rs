@@ -286,7 +286,7 @@ pub extern "C" fn nrfx_ipc_receive_event_disable(event_index: u8) {
 unsafe fn generic_alloc(num_bytes_requested: usize, heap: &crate::WrappedHeap) -> *mut u8 {
     let sizeof_usize = core::mem::size_of::<usize>();
     let mut result = core::ptr::null_mut();
-    cortex_m::interrupt::free(|cs| {
+    critical_section::with(|cs| {
         let num_bytes_allocated = num_bytes_requested + sizeof_usize;
         let layout =
             core::alloc::Layout::from_size_align_unchecked(num_bytes_allocated, sizeof_usize);
@@ -317,7 +317,7 @@ unsafe fn generic_alloc(num_bytes_requested: usize, heap: &crate::WrappedHeap) -
 /// This function is safe to call from an ISR.
 unsafe fn generic_free(ptr: *mut u8, heap: &crate::WrappedHeap) {
     let sizeof_usize = core::mem::size_of::<usize>() as isize;
-    cortex_m::interrupt::free(|cs| {
+    critical_section::with(|cs| {
         // Fetch the size from the previous four bytes
         let real_ptr = ptr.offset(-sizeof_usize);
         let num_bytes_allocated = core::ptr::read_volatile::<usize>(real_ptr as *const usize);

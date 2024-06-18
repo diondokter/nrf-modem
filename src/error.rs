@@ -38,6 +38,7 @@ pub enum Error {
     InternalRuntimeMutexLocked,
     /// The given memory layout falls outside of the acceptable range
     BadMemoryLayout,
+    ModemAlreadyInitialized,
 }
 
 pub trait ErrorSource {

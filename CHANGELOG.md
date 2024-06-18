@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3 (2024-06-18)
+
+- Added extra check that prevents initializing the modem multiple times
+- Updated embassy-sync
+- Stopped using `cortex_m::interrupt::free` in favour of `critical_section`
+
 ## 0.4.2 (2024-06-17)
 
 - Fixed a memory ownership issue in `nrf_modem_init`. The `nrf_modem_init_params` pointer given to the init must
