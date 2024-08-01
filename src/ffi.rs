@@ -524,39 +524,153 @@ pub extern "C" fn nrf_modem_os_is_in_isr() -> bool {
     cortex_m::peripheral::SCB::vect_active() != cortex_m::peripheral::scb::VectActive::ThreadMode
 }
 
-// This function is called by the library to allocate and initialize a mutex.
-// Required action:
-// Allocate and initialize a mutex.
-// If the address of an already allocated mutex is provided as an input, the allocation part is skipped and the mutex is only reinitialized.
-// Note
-// Mutexes are not required if multithreaded access to modem functionalities is not needed. In this case, the function must blindly return 0.
-#[no_mangle]
-pub unsafe extern "C" fn nrf_modem_os_mutex_init() -> i32 {
-   // TODO FIXME 
-   0
+// A basic mutex lock implementation for the os mutex functions below
+struct MutexLock {
+    lock: AtomicBool
 }
 
-// This function is called by the library to lock a mutex.
-#[no_mangle]
-pub unsafe extern "C" fn nrf_modem_os_mutex_lock() -> i32 {
-   // TODO FIXME 
-   0
+impl MutexLock {
+    pub fn lock(&self) -> bool {
+        match self.lock.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(false) => true,
+            _ => false
+        }
+    }
+
+    pub fn unlock(&self) {
+        self.lock.store(false, Ordering::SeqCst);
+    }
 }
 
-// This function is called by the library to unlock a mutex.
+/// Initialize a mutex.
+///
+/// The function shall allocate and initialize a mutex and return its address
+/// as an output. If an address of an already allocated mutex is provided as
+/// an input, the allocation part is skipped and the mutex is only reinitialized.
+///
+/// **Parameters**:
+/// - mutex – (inout) The address of the mutex.
+///
+/// **Returns**
+/// - 0 on success, a negative errno otherwise.
 #[no_mangle]
-pub unsafe extern "C" fn nrf_modem_os_mutex_unlock() {
+pub unsafe extern "C" fn nrf_modem_os_mutex_init(
+    mutex: *mut *mut core::ffi::c_void
+) -> core::ffi::c_int {
+    if mutex.is_null() {
+        return -(nrfxlib_sys::NRF_EINVAL as i32);
+    }
+
+    // Allocate if we need to
+    if (*mutex).is_null() {
+        // Allocate our mutex datastructure
+        *mutex = nrf_modem_os_alloc(core::mem::size_of::<MutexLock>()) as *mut _;
+
+        if (*mutex).is_null() {
+            // We are out of memory
+            return -(nrfxlib_sys::NRF_ENOMEM as i32);
+        }
+    } 
+
+    // (Re-)Initialize (unlock) the mutex
+    (*(mutex as *mut MutexLock)).unlock();
+
+    0
+}
+
+/// Lock a mutex.
+///
+/// **Parameters**:
+/// - mutex – (in) The mutex.
+/// - timeout – Timeout in milliseconds. NRF_MODEM_OS_FOREVER indicates infinite timeout. NRF_MODEM_OS_NO_WAIT indicates no timeout.
+///
+/// **Return values**
+/// - 0 – on success.
+/// - -NRF_EAGAIN – If the mutex could not be taken.
+#[no_mangle]
+pub unsafe extern "C" fn nrf_modem_os_mutex_lock(
+    mutex: *mut core::ffi::c_void,
+    timeout: core::ffi::c_int,
+) -> core::ffi::c_int {
+    if mutex.is_null() {
+        return -(nrfxlib_sys::NRF_EINVAL as i32);
+    }
+
+    let mutex = &*(mutex as *mut MutexLock);
+
+    let mut locked = mutex.lock();
+
+    if locked || timeout == nrfxlib_sys::NRF_MODEM_OS_NO_WAIT as i32 {
+        return if locked { 0 } else { -(nrfxlib_sys::NRF_EAGAIN as i32) }
+    }
+
+    let mut elapsed = 0;
+    const WAIT_US: core::ffi::c_int = 100;
+
+    while !locked {
+        nrf_modem_os_busywait(WAIT_US);
+
+        if timeout != nrfxlib_sys::NRF_MODEM_OS_FOREVER as i32 {
+            elapsed += WAIT_US;
+            if (elapsed / 1000) > timeout {
+                return -(nrfxlib_sys::NRF_EAGAIN as i32);
+            }
+        }
+
+        locked = mutex.lock();
+    }
+
+    0
+}
+
+
+/// Unlock a mutex.
+///
+/// **Parameters**:
+/// - mutex – (in) The mutex.
+///
+/// **Return values**
+/// - 0 – on success.
+/// - -NRF_EPERM – If the current thread does not own this mutex.
+/// - -NRF_EINVAL – If the mutex is not locked.
+#[no_mangle]
+pub unsafe extern "C" fn nrf_modem_os_mutex_unlock(
+    mutex: *mut core::ffi::c_void
+) -> core::ffi::c_int {
+    if mutex.is_null() {
+        return -(nrfxlib_sys::NRF_EINVAL as i32);
+    }
+    (*(mutex as *mut MutexLock)).unlock();
+    0
+}
+
+/// Generic logging procedure
+///
+/// **Parameters**:
+/// - level – Log level
+/// - fmt – Format string
+/// - ... – Varargs
+#[no_mangle]
+pub extern "C" fn nrf_modem_os_log(
+    _level: core::ffi::c_int,
+    _fmt: *const core::ffi::c_char
+) {
    // TODO FIXME 
 }
 
-// This function is called by the library to output logs. This function can be called in an interrupt context.
+/// Logging procedure for dumping hex representation of object.
+/// 
+/// **Parameters**:
+/// - level – Log level.
+/// - strdata - String to print in the log.
+/// - data - Data whose hex representation we want to log.
+/// - len - Length of the data to hex dump.
 #[no_mangle]
-pub unsafe extern "C" fn nrf_modem_os_log() {
-   // TODO FIXME 
-}
-
-// This function is called by the library to dump binary data. This function can be called in an interrupt context.
-#[no_mangle]
-pub unsafe extern "C" fn nrf_modem_os_logdump() {
+pub extern "C" fn nrf_modem_os_logdump(
+    _level: core::ffi::c_int,
+    _strdata: *const core::ffi::c_char,
+    _data: *const core::ffi::c_void,
+    _len: core::ffi::c_int,
+) {
    // TODO FIXME 
 }
