@@ -152,7 +152,7 @@ pub async fn init_with_custom_layout(
                 size: memory_layout.trace_area_size,
             },
         },
-        ipc_irq_prio: 1,
+        ipc_irq_prio: 0,
         fault_handler: Some(modem_fault_handler),
         dfu_handler: Some(modem_dfu_handler),
     };
