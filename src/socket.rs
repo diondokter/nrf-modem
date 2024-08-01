@@ -547,7 +547,7 @@ impl Socket {
                 0 if !buffer.is_empty() => Poll::Ready(Err(Error::Disconnected)),
                 NRF_ENOTCONN => Poll::Ready(Err(Error::Disconnected)),
                 bytes_received @ 0.. => Poll::Ready(Ok((bytes_received as usize, {
-                    unsafe { (*socket_addr_ptr).sa_family = self.family as u32 as i32 }
+                    unsafe { (*socket_addr_ptr).sa_family = self.family as u16 }
                     NrfSockAddr::from(socket_addr_ptr as *const _).into()
                 }))),
                 NRF_EWOULDBLOCK => Poll::Pending,

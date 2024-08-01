@@ -517,3 +517,40 @@ struct Semaphore {
 pub extern "C" fn nrf_modem_os_is_in_isr() -> bool {
     cortex_m::peripheral::SCB::vect_active() != cortex_m::peripheral::scb::VectActive::ThreadMode
 }
+
+// This function is called by the library to allocate and initialize a mutex.
+// Required action:
+// Allocate and initialize a mutex.
+// If the address of an already allocated mutex is provided as an input, the allocation part is skipped and the mutex is only reinitialized.
+// Note
+// Mutexes are not required if multithreaded access to modem functionalities is not needed. In this case, the function must blindly return 0.
+#[no_mangle]
+pub unsafe extern "C" fn nrf_modem_os_mutex_init() -> i32 {
+   // TODO FIXME 
+   0
+}
+
+// This function is called by the library to lock a mutex.
+#[no_mangle]
+pub unsafe extern "C" fn nrf_modem_os_mutex_lock() -> i32 {
+   // TODO FIXME 
+   0
+}
+
+// This function is called by the library to unlock a mutex.
+#[no_mangle]
+pub unsafe extern "C" fn nrf_modem_os_mutex_unlock() {
+   // TODO FIXME 
+}
+
+// This function is called by the library to output logs. This function can be called in an interrupt context.
+#[no_mangle]
+pub unsafe extern "C" fn nrf_modem_os_log() {
+   // TODO FIXME 
+}
+
+// This function is called by the library to dump binary data. This function can be called in an interrupt context.
+#[no_mangle]
+pub unsafe extern "C" fn nrf_modem_os_logdump() {
+   // TODO FIXME 
+}

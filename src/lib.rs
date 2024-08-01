@@ -88,9 +88,10 @@ pub async fn init_with_custom_layout(
     if !SHARED_MEMORY_RANGE.contains(&memory_layout.base_address) {
         return Err(Error::BadMemoryLayout);
     }
+    
     if !SHARED_MEMORY_RANGE.contains(
         &(memory_layout.base_address
-                + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE
+                + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
                 + memory_layout.tx_area_size
                 + memory_layout.rx_area_size
                 + memory_layout.trace_area_size
@@ -125,28 +126,29 @@ pub async fn init_with_custom_layout(
         shmem: nrfxlib_sys::nrf_modem_shmem_cfg {
             ctrl: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_1 {
                 base: memory_layout.base_address,
-                size: nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE,
+                size: nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE,
             },
             tx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_2 {
-                base: memory_layout.base_address + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE,
+                base: memory_layout.base_address + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE,
                 size: memory_layout.tx_area_size,
             },
             rx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_3 {
                 base: memory_layout.base_address
-                    + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE
+                    + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
                     + memory_layout.tx_area_size,
                 size: memory_layout.rx_area_size,
             },
             trace: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_4 {
                 base: memory_layout.base_address
-                    + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE
+                    + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
                     + memory_layout.tx_area_size
                     + memory_layout.rx_area_size,
                 size: memory_layout.trace_area_size,
             },
         },
-        ipc_irq_prio: 0,
+        ipc_irq_prio: 1,
         fault_handler: Some(modem_fault_handler),
+        dfu_handler: Some(modem_dfu_handler),
     };
 
     critical_section::with(|_| unsafe { PARAMS.get().write(params) });
@@ -229,6 +231,11 @@ unsafe extern "C" fn modem_fault_handler(_info: *mut nrfxlib_sys::nrf_modem_faul
         (*_info).reason,
         (*_info).program_counter
     );
+}
+
+unsafe extern "C" fn modem_dfu_handler(_val: u32) {
+    #[cfg(feature = "defmt")]
+    defmt::trace!("Modem DFU handler");
 }
 
 /// IPC code now lives outside `lib_modem`, so call our IPC handler function.

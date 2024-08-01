@@ -97,13 +97,13 @@ pub async fn get_host_by_name_with_cancellation(
         while !result_iter.is_null() && found_ip.is_none() {
             let address = (*result_iter).ai_addr;
 
-            if (*address).sa_family == nrfxlib_sys::NRF_AF_INET as i32 {
+            if (*address).sa_family == nrfxlib_sys::NRF_AF_INET as u16 {
                 let dns_addr: &nrfxlib_sys::nrf_sockaddr_in =
                     &*(address as *const nrfxlib_sys::nrf_sockaddr_in);
 
                 let socket_addr: SocketAddr = NrfSockAddr::from(*dns_addr).into();
                 found_ip = Some(socket_addr.ip());
-            } else if (*address).sa_family == nrfxlib_sys::NRF_AF_INET6 as i32 {
+            } else if (*address).sa_family == nrfxlib_sys::NRF_AF_INET6 as u16 {
                 let dns_addr: &nrfxlib_sys::nrf_sockaddr_in6 =
                     &*(address as *const nrfxlib_sys::nrf_sockaddr_in6);
 

@@ -13,7 +13,9 @@ keywords = ["nRF9160", "LTE", "GPS", "NB-IoT", "embedded"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nrfxlib-sys = "2.4.2"
+# nrfxlib-sys = "2.4.2"
+# TODO FIXME - Temporary
+nrfxlib-sys = { path = "../nrfxlib-sys" }
 futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
 num_enum = { version = "0.7.0", default-features = false }
 defmt = { version = "0.3", optional = true }
@@ -28,5 +30,8 @@ embassy-sync = "0.6.0"
 grounded = "0.2.0"
 
 [features]
-default = []
+default = ["nrf9160"]
 defmt = ["dep:defmt", "at-commands/defmt"]
+
+nrf9160 = ["nrfxlib-sys/nrf9160"]
+nrf9151 = ["nrfxlib-sys/nrf9151"]
