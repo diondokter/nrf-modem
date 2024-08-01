@@ -12,6 +12,12 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+#[cfg(feature = "nrf9160")]
+use nrf9160_pac as pac;
+
+#[cfg(feature = "nrf9120")]
+use nrf9120_pac as pac;
+
 /// Number of IPC configurations in `NrfxIpcConfig`
 const IPC_CONF_NUM: usize = 8;
 
@@ -103,7 +109,7 @@ pub fn get_last_error() -> isize {
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_busywait(usec: i32) {
     if usec > 0 {
-        // NRF9160 runs at 64 MHz, so this is close enough
+        // The nRF91* Arm Cortex-M33 runs at 64 MHz, so this is close enough
         cortex_m::asm::delay((usec as u32) * 64);
     }
 }
@@ -206,7 +212,7 @@ pub unsafe extern "C" fn nrf_modem_os_shm_tx_free(ptr: *mut u8) {
 pub unsafe extern "C" fn nrfx_ipc_config_load(p_config: *const NrfxIpcConfig) {
     let config: &NrfxIpcConfig = &*p_config;
 
-    let ipc = &(*nrf9160_pac::IPC_NS::ptr());
+    let ipc = &(*pac::IPC_NS::ptr());
 
     for (i, value) in config.send_task_config.iter().enumerate() {
         ipc.send_cnf[i].write(|w| w.bits(*value));
@@ -235,7 +241,7 @@ pub extern "C" fn nrfx_ipc_init(
     p_context: usize,
 ) -> NrfxErr {
     use cortex_m::interrupt::InterruptNumber;
-    let irq = nrf9160_pac::Interrupt::IPC;
+    let irq = pac::Interrupt::IPC;
     let irq_num = usize::from(irq.number());
     unsafe {
         cortex_m::peripheral::NVIC::unmask(irq);
@@ -250,7 +256,7 @@ pub extern "C" fn nrfx_ipc_init(
 /// Function for uninitializing the IPC module.
 #[no_mangle]
 pub extern "C" fn nrfx_ipc_uninit() {
-    let ipc = unsafe { &(*nrf9160_pac::IPC_NS::ptr()) };
+    let ipc = unsafe { &(*pac::IPC_NS::ptr()) };
 
     for i in 0..IPC_CONF_NUM {
         ipc.send_cnf[i].reset();
@@ -265,14 +271,14 @@ pub extern "C" fn nrfx_ipc_uninit() {
 
 #[no_mangle]
 pub extern "C" fn nrfx_ipc_receive_event_enable(event_index: u8) {
-    let ipc = unsafe { &(*nrf9160_pac::IPC_NS::ptr()) };
+    let ipc = unsafe { &(*pac::IPC_NS::ptr()) };
     ipc.inten
         .modify(|r, w| unsafe { w.bits(r.bits() | 1 << event_index) })
 }
 
 #[no_mangle]
 pub extern "C" fn nrfx_ipc_receive_event_disable(event_index: u8) {
-    let ipc = unsafe { &(*nrf9160_pac::IPC_NS::ptr()) };
+    let ipc = unsafe { &(*pac::IPC_NS::ptr()) };
     ipc.inten
         .modify(|r, w| unsafe { w.bits(r.bits() & !(1 << event_index)) })
 }
@@ -337,7 +343,7 @@ unsafe fn generic_free(ptr: *mut u8, heap: &crate::WrappedHeap) {
 // https://github.com/NordicSemiconductor/nrfx/blob/98d6f433313a3d8dcf08dce25e744617b45aa913/drivers/src/nrfx_ipc.c#L146-L163
 pub unsafe fn nrf_ipc_irq_handler() {
     // Get the information about events that fired this interrupt
-    let events_map = (*nrf9160_pac::IPC_NS::ptr()).intpend.read().bits();
+    let events_map = (*pac::IPC_NS::ptr()).intpend.read().bits();
 
     // Fetch interrupt handler and context to use during event resolution
     let handler_addr = IPC_HANDLER.load(core::sync::atomic::Ordering::SeqCst);
@@ -356,7 +362,7 @@ pub unsafe fn nrf_ipc_irq_handler() {
     while bitmask != 0 {
         let event_idx = bitmask.trailing_zeros();
         bitmask &= !(1 << event_idx);
-        (*nrf9160_pac::IPC_NS::ptr()).events_receive[event_idx as usize].write(|w| w.bits(0));
+        (*pac::IPC_NS::ptr()).events_receive[event_idx as usize].write(|w| w.bits(0));
 
         // Execute interrupt handler to provide information about events to app
         if let Some(handler) = handler {

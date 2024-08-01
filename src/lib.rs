@@ -43,6 +43,12 @@ pub use sms::*;
 pub use tcp_stream::*;
 pub use udp_socket::*;
 
+#[cfg(feature = "nrf9160")]
+use nrf9160_pac as pac;
+
+#[cfg(feature = "nrf9120")]
+use nrf9120_pac as pac;
+
 /// We need to wrap our heap so it's creatable at run-time and accessible from an ISR.
 ///
 /// * The Mutex allows us to safely share the heap between interrupt routines
@@ -103,7 +109,7 @@ pub async fn init_with_custom_layout(
 
     // The modem is only certified when the DC/DC converter is enabled and it isn't by default
     unsafe {
-        (*nrf9160_pac::REGULATORS_NS::PTR)
+        (*pac::REGULATORS_NS::PTR)
             .dcdcen
             .modify(|_, w| w.dcdcen().enabled());
     }
@@ -246,7 +252,7 @@ pub fn ipc_irq_handler() {
     cortex_m::asm::sev();
 }
 
-/// Identifies which radios in the nRF9160 should be active
+/// Identifies which radios in the nRF91* SiP should be active
 ///
 /// Based on: <https://infocenter.nordicsemi.com/index.jsp?topic=%2Fref_at_commands%2FREF%2Fat_commands%2Fmob_termination_ctrl_status%2Fcfun.html>
 #[derive(Debug, Copy, Clone)]
@@ -328,6 +334,7 @@ impl SystemMode {
 ///
 /// Works on the nRF9160-DK (PCA10090NS) and Actinius Icarus. Other PCBs may
 /// use different MAGPIO pins to control the GNSS switch.
+#[cfg(feature = "nrf9160")]
 pub async fn configure_gnss_on_pca10090ns() -> Result<(), Error> {
     #[cfg(feature = "defmt")]
     defmt::debug!("Configuring XMAGPIO pins for 1574-1577 MHz");
