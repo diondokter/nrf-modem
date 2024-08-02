@@ -2,9 +2,28 @@
 
 [![crates.io](https://img.shields.io/crates/v/nrf-modem.svg)](https://crates.io/crates/nrf-modem) [![Documentation](https://docs.rs/nrf-modem/badge.svg)](https://docs.rs/nrf-modem)
 
-This is a library that provides a high-level async API for the nRF9160 modem.
+This is a library that provides a high-level async API for the modem on the Nordic nRF91* series chips (System-in-Packages). Supported chips are the following:
+
+* nRF9160
+* nRF9151
+* nRF9161
 
 It can be used with any executor.
+
+## Using
+
+In your own program or library, you can depend on this crate in the usual fashion:
+
+```toml
+[dependencies]
+nrf-modem = "0.5.0"
+```
+The `nrf9160` feature is enabled by default for legacy support. To use this library on another supported chip (e.g., `nrf9151`), select that feature and disable default feautes.
+
+```toml
+[dependencies]
+nrf-modem = { version = "0.5.0", default-featues = false, features = ["nrf9151"] }
+```
 
 ## Errors and recovery
 
@@ -36,7 +55,7 @@ But it's easy to miss something, so this is a 'best effort' guarantee only.
 ### Nonsecure
 
 Nordic has made it so that the modem can only be used when in the nonsecure context.
-Make sure you are in that context by using e.g. the SPM.
+Make sure you are in that context by using e.g. the SPM or TF-M.
 
 ### Interrupts
 

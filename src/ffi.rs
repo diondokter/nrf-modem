@@ -10,8 +10,8 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use core::mem::MaybeUninit;
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 #[cfg(feature = "nrf9160")]
 use nrf9160_pac as pac;
@@ -527,14 +527,17 @@ pub extern "C" fn nrf_modem_os_is_in_isr() -> bool {
 
 // A basic mutex lock implementation for the os mutex functions below
 struct MutexLock {
-    lock: AtomicBool
+    lock: AtomicBool,
 }
 
 impl MutexLock {
     pub fn lock(&self) -> bool {
-        match self.lock.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst) {
+        match self
+            .lock
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        {
             Ok(false) => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -556,7 +559,7 @@ impl MutexLock {
 /// - 0 on success, a negative errno otherwise.
 #[no_mangle]
 pub unsafe extern "C" fn nrf_modem_os_mutex_init(
-    mutex: *mut *mut core::ffi::c_void
+    mutex: *mut *mut core::ffi::c_void,
 ) -> core::ffi::c_int {
     if mutex.is_null() {
         return -(nrfxlib_sys::NRF_EINVAL as i32);
@@ -564,22 +567,22 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_init(
 
     // Allocate if needed
     if (*mutex).is_null() {
-        // Allocate memory for the MutexLock 
-        let p = nrf_modem_os_alloc(core::mem::size_of::<MaybeUninit<MutexLock>>()) as *mut MaybeUninit<MutexLock>;
+        // Allocate memory for the MutexLock
+        let p = nrf_modem_os_alloc(core::mem::size_of::<MaybeUninit<MutexLock>>())
+            as *mut MaybeUninit<MutexLock>;
 
         if p.is_null() {
             // We are out of memory
             return -(nrfxlib_sys::NRF_ENOMEM as i32);
         }
 
-        // Initialize the MutexLock 
+        // Initialize the MutexLock
         p.write(MaybeUninit::new(MutexLock {
             lock: AtomicBool::new(false),
         }));
 
         // Assign the mutex
         *mutex = p as *mut core::ffi::c_void;
-
     } else {
         // Already allocated, so just reinitialize (unlock) the mutex
         (*(mutex as *mut MutexLock)).unlock();
@@ -611,7 +614,11 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_lock(
     let mut locked = mutex.lock();
 
     if locked || timeout == nrfxlib_sys::NRF_MODEM_OS_NO_WAIT as i32 {
-        return if locked { 0 } else { -(nrfxlib_sys::NRF_EAGAIN as i32) }
+        return if locked {
+            0
+        } else {
+            -(nrfxlib_sys::NRF_EAGAIN as i32)
+        };
     }
 
     let mut elapsed = 0;
@@ -633,7 +640,6 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_lock(
     0
 }
 
-
 /// Unlock a mutex.
 ///
 /// **Parameters**:
@@ -645,7 +651,7 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_lock(
 /// - -NRF_EINVAL – If the mutex is not locked.
 #[no_mangle]
 pub unsafe extern "C" fn nrf_modem_os_mutex_unlock(
-    mutex: *mut core::ffi::c_void
+    mutex: *mut core::ffi::c_void,
 ) -> core::ffi::c_int {
     if mutex.is_null() {
         return -(nrfxlib_sys::NRF_EINVAL as i32);
@@ -661,15 +667,12 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_unlock(
 /// - fmt – Format string
 /// - ... – Varargs
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_log(
-    _level: core::ffi::c_int,
-    _fmt: *const core::ffi::c_char
-) {
-   // TODO FIXME 
+pub extern "C" fn nrf_modem_os_log(_level: core::ffi::c_int, _fmt: *const core::ffi::c_char) {
+    // TODO FIXME
 }
 
 /// Logging procedure for dumping hex representation of object.
-/// 
+///
 /// **Parameters**:
 /// - level – Log level.
 /// - strdata - String to print in the log.
@@ -682,5 +685,5 @@ pub extern "C" fn nrf_modem_os_logdump(
     _data: *const core::ffi::c_void,
     _len: core::ffi::c_int,
 ) {
-   // TODO FIXME 
+    // TODO FIXME
 }

@@ -94,7 +94,7 @@ pub async fn init_with_custom_layout(
     if !SHARED_MEMORY_RANGE.contains(&memory_layout.base_address) {
         return Err(Error::BadMemoryLayout);
     }
-    
+
     if !SHARED_MEMORY_RANGE.contains(
         &(memory_layout.base_address
                 + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
