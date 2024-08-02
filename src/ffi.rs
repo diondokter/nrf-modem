@@ -11,6 +11,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::mem::MaybeUninit;
 
 #[cfg(feature = "nrf9160")]
 use nrf9160_pac as pac;
@@ -561,19 +562,28 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_init(
         return -(nrfxlib_sys::NRF_EINVAL as i32);
     }
 
-    // Allocate if we need to
+    // Allocate if needed
     if (*mutex).is_null() {
-        // Allocate our mutex datastructure
-        *mutex = nrf_modem_os_alloc(core::mem::size_of::<MutexLock>()) as *mut _;
+        // Allocate memory for the MutexLock 
+        let p = nrf_modem_os_alloc(core::mem::size_of::<MaybeUninit<MutexLock>>()) as *mut MaybeUninit<MutexLock>;
 
-        if (*mutex).is_null() {
+        if p.is_null() {
             // We are out of memory
             return -(nrfxlib_sys::NRF_ENOMEM as i32);
         }
-    } 
 
-    // (Re-)Initialize (unlock) the mutex
-    (*(mutex as *mut MutexLock)).unlock();
+        // Initialize the MutexLock 
+        p.write(MaybeUninit::new(MutexLock {
+            lock: AtomicBool::new(false),
+        }));
+
+        // Assign the mutex
+        *mutex = p as *mut core::ffi::c_void;
+
+    } else {
+        // Already allocated, so just reinitialize (unlock) the mutex
+        (*(mutex as *mut MutexLock)).unlock();
+    }
 
     0
 }
