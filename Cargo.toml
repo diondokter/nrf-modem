@@ -4,11 +4,11 @@ version = "0.5.0"
 edition = "2021"
 rust-version = "1.64"
 license = "MIT OR Apache-2.0"
-description = "Async modem api for the nRF9160"
+description = "Async modem api for the nRF91xx"
 homepage = "https://github.com/diondokter/nrf-modem"
 repository = "https://github.com/diondokter/nrf-modem"
 readme = "README.md"
-keywords = ["nRF9160", "nRF9151", "LTE", "GPS", "NB-IoT", "embedded"]
+keywords = ["nRF91", "LTE", "GPS", "NB-IoT", "embedded"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
