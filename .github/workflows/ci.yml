@@ -21,4 +21,5 @@ jobs:
           targets: thumbv8m.main-none-eabihf
 
       - run: cargo fmt -- --check
-      - run: cargo clippy --target thumbv8m.main-none-eabihf
+      - run: cargo clippy --features nrf9160 --target thumbv8m.main-none-eabihf
+      - run: cargo clippy --features nrf9151 --target thumbv8m.main-none-eabihf

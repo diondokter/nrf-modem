@@ -43,6 +43,12 @@ pub use sms::*;
 pub use tcp_stream::*;
 pub use udp_socket::*;
 
+#[cfg(feature = "nrf9160")]
+use nrf9160_pac as pac;
+
+#[cfg(feature = "nrf9120")]
+use nrf9120_pac as pac;
+
 /// We need to wrap our heap so it's creatable at run-time and accessible from an ISR.
 ///
 /// * The Mutex allows us to safely share the heap between interrupt routines
@@ -88,9 +94,10 @@ pub async fn init_with_custom_layout(
     if !SHARED_MEMORY_RANGE.contains(&memory_layout.base_address) {
         return Err(Error::BadMemoryLayout);
     }
+
     if !SHARED_MEMORY_RANGE.contains(
         &(memory_layout.base_address
-                + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE
+                + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
                 + memory_layout.tx_area_size
                 + memory_layout.rx_area_size
                 + memory_layout.trace_area_size
@@ -102,7 +109,7 @@ pub async fn init_with_custom_layout(
 
     // The modem is only certified when the DC/DC converter is enabled and it isn't by default
     unsafe {
-        (*nrf9160_pac::REGULATORS_NS::PTR)
+        (*pac::REGULATORS_NS::PTR)
             .dcdcen
             .modify(|_, w| w.dcdcen().enabled());
     }
@@ -125,21 +132,21 @@ pub async fn init_with_custom_layout(
         shmem: nrfxlib_sys::nrf_modem_shmem_cfg {
             ctrl: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_1 {
                 base: memory_layout.base_address,
-                size: nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE,
+                size: nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE,
             },
             tx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_2 {
-                base: memory_layout.base_address + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE,
+                base: memory_layout.base_address + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE,
                 size: memory_layout.tx_area_size,
             },
             rx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_3 {
                 base: memory_layout.base_address
-                    + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE
+                    + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
                     + memory_layout.tx_area_size,
                 size: memory_layout.rx_area_size,
             },
             trace: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_4 {
                 base: memory_layout.base_address
-                    + nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE
+                    + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
                     + memory_layout.tx_area_size
                     + memory_layout.rx_area_size,
                 size: memory_layout.trace_area_size,
@@ -147,6 +154,7 @@ pub async fn init_with_custom_layout(
         },
         ipc_irq_prio: 0,
         fault_handler: Some(modem_fault_handler),
+        dfu_handler: Some(modem_dfu_handler),
     };
 
     critical_section::with(|_| unsafe { PARAMS.get().write(params) });
@@ -231,6 +239,11 @@ unsafe extern "C" fn modem_fault_handler(_info: *mut nrfxlib_sys::nrf_modem_faul
     );
 }
 
+unsafe extern "C" fn modem_dfu_handler(_val: u32) {
+    #[cfg(feature = "defmt")]
+    defmt::trace!("Modem DFU handler");
+}
+
 /// IPC code now lives outside `lib_modem`, so call our IPC handler function.
 pub fn ipc_irq_handler() {
     unsafe {
@@ -239,7 +252,7 @@ pub fn ipc_irq_handler() {
     cortex_m::asm::sev();
 }
 
-/// Identifies which radios in the nRF9160 should be active
+/// Identifies which radios in the nRF91* SiP should be active
 ///
 /// Based on: <https://infocenter.nordicsemi.com/index.jsp?topic=%2Fref_at_commands%2FREF%2Fat_commands%2Fmob_termination_ctrl_status%2Fcfun.html>
 #[derive(Debug, Copy, Clone)]
@@ -321,6 +334,7 @@ impl SystemMode {
 ///
 /// Works on the nRF9160-DK (PCA10090NS) and Actinius Icarus. Other PCBs may
 /// use different MAGPIO pins to control the GNSS switch.
+#[cfg(feature = "nrf9160")]
 pub async fn configure_gnss_on_pca10090ns() -> Result<(), Error> {
     #[cfg(feature = "defmt")]
     defmt::debug!("Configuring XMAGPIO pins for 1574-1577 MHz");

@@ -237,7 +237,7 @@ enum GnssEventType {
     /// NMEA event.
     Nmea = nrfxlib_sys::NRF_MODEM_GNSS_EVT_NMEA,
     /// Need new APGS data event.
-    AgpsRequest = nrfxlib_sys::NRF_MODEM_GNSS_EVT_AGPS_REQ,
+    AgpsRequest = nrfxlib_sys::NRF_MODEM_GNSS_EVT_AGNSS_REQ,
     /// GNSS is blocked by LTE event.
     BlockedByLte = nrfxlib_sys::NRF_MODEM_GNSS_EVT_BLOCKED,
     /// GNSS is unblocked by LTE event.
@@ -374,7 +374,7 @@ pub enum GnssPowerSaveMode {
 enum GnssDataType {
     PositionVelocityTime = nrfxlib_sys::NRF_MODEM_GNSS_DATA_PVT,
     Nmea = nrfxlib_sys::NRF_MODEM_GNSS_DATA_NMEA,
-    Agps = nrfxlib_sys::NRF_MODEM_GNSS_DATA_AGPS_REQ,
+    Agps = nrfxlib_sys::NRF_MODEM_GNSS_DATA_AGNSS_REQ,
 }
 
 /// An enum containing all possible GNSS data types
@@ -385,7 +385,7 @@ pub enum GnssData {
     /// An NMEA string
     Nmea(ArrayString<83>),
     /// An assisted gps data frame
-    Agps(nrfxlib_sys::nrf_modem_gnss_agps_data_frame),
+    Agps(nrfxlib_sys::nrf_modem_gnss_agnss_data_frame),
 }
 
 impl GnssData {
@@ -435,7 +435,7 @@ impl GnssData {
                 unsafe {
                     nrfxlib_sys::nrf_modem_gnss_read(
                         data.as_mut_ptr() as *mut _,
-                        size_of::<nrfxlib_sys::nrf_modem_gnss_agps_data_frame>() as i32,
+                        size_of::<nrfxlib_sys::nrf_modem_gnss_agnss_data_frame>() as i32,
                         data_type as u32 as _,
                     )
                     .into_result()?;

@@ -10,7 +10,14 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+
+#[cfg(feature = "nrf9160")]
+use nrf9160_pac as pac;
+
+#[cfg(feature = "nrf9120")]
+use nrf9120_pac as pac;
 
 /// Number of IPC configurations in `NrfxIpcConfig`
 const IPC_CONF_NUM: usize = 8;
@@ -103,7 +110,7 @@ pub fn get_last_error() -> isize {
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_busywait(usec: i32) {
     if usec > 0 {
-        // NRF9160 runs at 64 MHz, so this is close enough
+        // The nRF91* Arm Cortex-M33 runs at 64 MHz, so this is close enough
         cortex_m::asm::delay((usec as u32) * 64);
     }
 }
@@ -115,7 +122,7 @@ pub extern "C" fn nrf_modem_os_busywait(usec: i32) {
 /// **Parameters**
 /// - context – (in) A unique identifier assigned by the library to identify the context.
 /// - timeout – (inout) Timeout in millisec or -1 for infinite timeout.
-/// Contains the timeout value as input and the remainig time to sleep as output.
+///   Contains the timeout value as input and the remainig time to sleep as output.
 ///
 /// **Return values**
 /// - 0 – The thread is woken before the timeout expired.
@@ -206,7 +213,7 @@ pub unsafe extern "C" fn nrf_modem_os_shm_tx_free(ptr: *mut u8) {
 pub unsafe extern "C" fn nrfx_ipc_config_load(p_config: *const NrfxIpcConfig) {
     let config: &NrfxIpcConfig = &*p_config;
 
-    let ipc = &(*nrf9160_pac::IPC_NS::ptr());
+    let ipc = &(*pac::IPC_NS::ptr());
 
     for (i, value) in config.send_task_config.iter().enumerate() {
         ipc.send_cnf[i].write(|w| w.bits(*value));
@@ -235,7 +242,7 @@ pub extern "C" fn nrfx_ipc_init(
     p_context: usize,
 ) -> NrfxErr {
     use cortex_m::interrupt::InterruptNumber;
-    let irq = nrf9160_pac::Interrupt::IPC;
+    let irq = pac::Interrupt::IPC;
     let irq_num = usize::from(irq.number());
     unsafe {
         cortex_m::peripheral::NVIC::unmask(irq);
@@ -250,7 +257,7 @@ pub extern "C" fn nrfx_ipc_init(
 /// Function for uninitializing the IPC module.
 #[no_mangle]
 pub extern "C" fn nrfx_ipc_uninit() {
-    let ipc = unsafe { &(*nrf9160_pac::IPC_NS::ptr()) };
+    let ipc = unsafe { &(*pac::IPC_NS::ptr()) };
 
     for i in 0..IPC_CONF_NUM {
         ipc.send_cnf[i].reset();
@@ -265,14 +272,14 @@ pub extern "C" fn nrfx_ipc_uninit() {
 
 #[no_mangle]
 pub extern "C" fn nrfx_ipc_receive_event_enable(event_index: u8) {
-    let ipc = unsafe { &(*nrf9160_pac::IPC_NS::ptr()) };
+    let ipc = unsafe { &(*pac::IPC_NS::ptr()) };
     ipc.inten
         .modify(|r, w| unsafe { w.bits(r.bits() | 1 << event_index) })
 }
 
 #[no_mangle]
 pub extern "C" fn nrfx_ipc_receive_event_disable(event_index: u8) {
-    let ipc = unsafe { &(*nrf9160_pac::IPC_NS::ptr()) };
+    let ipc = unsafe { &(*pac::IPC_NS::ptr()) };
     ipc.inten
         .modify(|r, w| unsafe { w.bits(r.bits() & !(1 << event_index)) })
 }
@@ -337,7 +344,7 @@ unsafe fn generic_free(ptr: *mut u8, heap: &crate::WrappedHeap) {
 // https://github.com/NordicSemiconductor/nrfx/blob/98d6f433313a3d8dcf08dce25e744617b45aa913/drivers/src/nrfx_ipc.c#L146-L163
 pub unsafe fn nrf_ipc_irq_handler() {
     // Get the information about events that fired this interrupt
-    let events_map = (*nrf9160_pac::IPC_NS::ptr()).intpend.read().bits();
+    let events_map = (*pac::IPC_NS::ptr()).intpend.read().bits();
 
     // Fetch interrupt handler and context to use during event resolution
     let handler_addr = IPC_HANDLER.load(core::sync::atomic::Ordering::SeqCst);
@@ -356,7 +363,7 @@ pub unsafe fn nrf_ipc_irq_handler() {
     while bitmask != 0 {
         let event_idx = bitmask.trailing_zeros();
         bitmask &= !(1 << event_idx);
-        (*nrf9160_pac::IPC_NS::ptr()).events_receive[event_idx as usize].write(|w| w.bits(0));
+        (*pac::IPC_NS::ptr()).events_receive[event_idx as usize].write(|w| w.bits(0));
 
         // Execute interrupt handler to provide information about events to app
         if let Some(handler) = handler {
@@ -516,4 +523,165 @@ struct Semaphore {
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_is_in_isr() -> bool {
     cortex_m::peripheral::SCB::vect_active() != cortex_m::peripheral::scb::VectActive::ThreadMode
+}
+
+// A basic mutex lock implementation for the os mutex functions below
+struct MutexLock {
+    lock: AtomicBool,
+}
+
+impl MutexLock {
+    pub fn lock(&self) -> bool {
+        matches!(
+            self.lock
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst),
+            Ok(false)
+        )
+    }
+
+    pub fn unlock(&self) {
+        self.lock.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Initialize a mutex.
+///
+/// The function shall allocate and initialize a mutex and return its address
+/// as an output. If an address of an already allocated mutex is provided as
+/// an input, the allocation part is skipped and the mutex is only reinitialized.
+///
+/// **Parameters**:
+/// - mutex – (inout) The address of the mutex.
+///
+/// **Returns**
+/// - 0 on success, a negative errno otherwise.
+#[no_mangle]
+pub unsafe extern "C" fn nrf_modem_os_mutex_init(
+    mutex: *mut *mut core::ffi::c_void,
+) -> core::ffi::c_int {
+    if mutex.is_null() {
+        return -(nrfxlib_sys::NRF_EINVAL as i32);
+    }
+
+    // Allocate if needed
+    if (*mutex).is_null() {
+        // Allocate memory for the MutexLock
+        let p = nrf_modem_os_alloc(core::mem::size_of::<MaybeUninit<MutexLock>>())
+            as *mut MaybeUninit<MutexLock>;
+
+        if p.is_null() {
+            // We are out of memory
+            return -(nrfxlib_sys::NRF_ENOMEM as i32);
+        }
+
+        // Initialize the MutexLock
+        p.write(MaybeUninit::new(MutexLock {
+            lock: AtomicBool::new(false),
+        }));
+
+        // Assign the mutex
+        *mutex = p as *mut core::ffi::c_void;
+    } else {
+        // Already allocated, so just reinitialize (unlock) the mutex
+        (*(mutex as *mut MutexLock)).unlock();
+    }
+
+    0
+}
+
+/// Lock a mutex.
+///
+/// **Parameters**:
+/// - mutex – (in) The mutex.
+/// - timeout – Timeout in milliseconds. NRF_MODEM_OS_FOREVER indicates infinite timeout. NRF_MODEM_OS_NO_WAIT indicates no timeout.
+///
+/// **Return values**
+/// - 0 – on success.
+/// - -NRF_EAGAIN – If the mutex could not be taken.
+#[no_mangle]
+pub unsafe extern "C" fn nrf_modem_os_mutex_lock(
+    mutex: *mut core::ffi::c_void,
+    timeout: core::ffi::c_int,
+) -> core::ffi::c_int {
+    if mutex.is_null() {
+        return -(nrfxlib_sys::NRF_EINVAL as i32);
+    }
+
+    let mutex = &*(mutex as *mut MutexLock);
+
+    let mut locked = mutex.lock();
+
+    if locked || timeout == nrfxlib_sys::NRF_MODEM_OS_NO_WAIT as i32 {
+        return if locked {
+            0
+        } else {
+            -(nrfxlib_sys::NRF_EAGAIN as i32)
+        };
+    }
+
+    let mut elapsed = 0;
+    const WAIT_US: core::ffi::c_int = 100;
+
+    while !locked {
+        nrf_modem_os_busywait(WAIT_US);
+
+        if timeout != nrfxlib_sys::NRF_MODEM_OS_FOREVER {
+            elapsed += WAIT_US;
+            if (elapsed / 1000) > timeout {
+                return -(nrfxlib_sys::NRF_EAGAIN as i32);
+            }
+        }
+
+        locked = mutex.lock();
+    }
+
+    0
+}
+
+/// Unlock a mutex.
+///
+/// **Parameters**:
+/// - mutex – (in) The mutex.
+///
+/// **Return values**
+/// - 0 – on success.
+/// - -NRF_EPERM – If the current thread does not own this mutex.
+/// - -NRF_EINVAL – If the mutex is not locked.
+#[no_mangle]
+pub unsafe extern "C" fn nrf_modem_os_mutex_unlock(
+    mutex: *mut core::ffi::c_void,
+) -> core::ffi::c_int {
+    if mutex.is_null() {
+        return -(nrfxlib_sys::NRF_EINVAL as i32);
+    }
+    (*(mutex as *mut MutexLock)).unlock();
+    0
+}
+
+/// Generic logging procedure
+///
+/// **Parameters**:
+/// - level – Log level
+/// - fmt – Format string
+/// - ... – Varargs
+#[no_mangle]
+pub extern "C" fn nrf_modem_os_log(_level: core::ffi::c_int, _fmt: *const core::ffi::c_char) {
+    // TODO FIXME
+}
+
+/// Logging procedure for dumping hex representation of object.
+///
+/// **Parameters**:
+/// - level – Log level.
+/// - strdata - String to print in the log.
+/// - data - Data whose hex representation we want to log.
+/// - len - Length of the data to hex dump.
+#[no_mangle]
+pub extern "C" fn nrf_modem_os_logdump(
+    _level: core::ffi::c_int,
+    _strdata: *const core::ffi::c_char,
+    _data: *const core::ffi::c_void,
+    _len: core::ffi::c_int,
+) {
+    // TODO FIXME
 }

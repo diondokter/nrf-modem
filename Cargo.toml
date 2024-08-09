@@ -1,6 +1,6 @@
 [package]
 name = "nrf-modem"
-version = "0.4.3"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.64"
 license = "MIT OR Apache-2.0"
@@ -8,19 +8,21 @@ description = "Async modem api for the nRF9160"
 homepage = "https://github.com/diondokter/nrf-modem"
 repository = "https://github.com/diondokter/nrf-modem"
 readme = "README.md"
-keywords = ["nRF9160", "LTE", "GPS", "NB-IoT", "embedded"]
+keywords = ["nRF9160", "nRF9151", "LTE", "GPS", "NB-IoT", "embedded"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nrfxlib-sys = "2.4.2"
+nrfxlib-sys = "=2.7.1"
+
 futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
 num_enum = { version = "0.7.0", default-features = false }
 defmt = { version = "0.3", optional = true }
 cortex-m = "0.7"
 linked_list_allocator = { version="0.10.1", default-features=false, features=["use_spin"] }
-nrf9160-pac = "0.12.2"
 arrayvec = { version = "0.7", default-features = false }
+nrf9160-pac = { version = "0.12.2", optional = true }
+nrf9120-pac = { version = "0.12.2", optional = true }
 at-commands = "0.5.2"
 no-std-net = "0.6.0"
 critical-section = "1.1"
@@ -30,3 +32,8 @@ grounded = "0.2.0"
 [features]
 default = []
 defmt = ["dep:defmt", "at-commands/defmt"]
+
+nrf9160 = ["nrfxlib-sys/nrf9160", "dep:nrf9160-pac"]
+nrf9151 = ["nrf9120"]
+nrf9161 = ["nrf9120"]
+nrf9120 = ["nrfxlib-sys/nrf9120", "dep:nrf9120-pac"]

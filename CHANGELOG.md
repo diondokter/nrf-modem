@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0 (2024-08-09)
+
+- *Breaking:* Updated to nrfxlib-sys 2.7.1
+- *Breaking:* Added support for nrf9151. You must now select a feature flag for your chip
+
 ## 0.4.3 (2024-06-18)
 
 - Added extra check that prevents initializing the modem multiple times
