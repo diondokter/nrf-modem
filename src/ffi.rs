@@ -122,7 +122,7 @@ pub extern "C" fn nrf_modem_os_busywait(usec: i32) {
 /// **Parameters**
 /// - context – (in) A unique identifier assigned by the library to identify the context.
 /// - timeout – (inout) Timeout in millisec or -1 for infinite timeout.
-/// Contains the timeout value as input and the remainig time to sleep as output.
+///   Contains the timeout value as input and the remainig time to sleep as output.
 ///
 /// **Return values**
 /// - 0 – The thread is woken before the timeout expired.
@@ -532,13 +532,11 @@ struct MutexLock {
 
 impl MutexLock {
     pub fn lock(&self) -> bool {
-        match self
-            .lock
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        {
-            Ok(false) => true,
-            _ => false,
-        }
+        matches!(
+            self.lock
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst),
+            Ok(false)
+        )
     }
 
     pub fn unlock(&self) {
@@ -627,7 +625,7 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_lock(
     while !locked {
         nrf_modem_os_busywait(WAIT_US);
 
-        if timeout != nrfxlib_sys::NRF_MODEM_OS_FOREVER as i32 {
+        if timeout != nrfxlib_sys::NRF_MODEM_OS_FOREVER {
             elapsed += WAIT_US;
             if (elapsed / 1000) > timeout {
                 return -(nrfxlib_sys::NRF_EAGAIN as i32);

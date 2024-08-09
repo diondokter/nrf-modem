@@ -30,7 +30,7 @@ embassy-sync = "0.6.0"
 grounded = "0.2.0"
 
 [features]
-default = ["nrf9160"]
+default = []
 defmt = ["dep:defmt", "at-commands/defmt"]
 
 nrf9160 = ["nrfxlib-sys/nrf9160", "dep:nrf9160-pac"]
