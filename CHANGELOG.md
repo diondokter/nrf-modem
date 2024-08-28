@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1 (2024-08-28)
+
+- Fix documentation generation for docs.rs
+
 ## 0.5.0 (2024-08-09)
 
 - *Breaking:* Updated to nrfxlib-sys 2.7.1

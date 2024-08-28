@@ -1,6 +1,6 @@
 [package]
 name = "nrf-modem"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 rust-version = "1.64"
 license = "MIT OR Apache-2.0"
@@ -37,3 +37,6 @@ nrf9160 = ["nrfxlib-sys/nrf9160", "dep:nrf9160-pac"]
 nrf9151 = ["nrf9120"]
 nrf9161 = ["nrf9120"]
 nrf9120 = ["nrfxlib-sys/nrf9120", "dep:nrf9120-pac"]
+
+[package.metadata.docs.rs]
+features = ["nrf9160"]
