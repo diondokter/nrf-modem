@@ -12,17 +12,24 @@ It can be used with any executor.
 
 ## Using
 
-In your own program or library, you can depend on this crate in the usual fashion:
+In your own program or library, you can depend on this crate in the usual fashion.
 
+nrf9160:
 ```toml
 [dependencies]
-nrf-modem = "0.5.0"
+nrf-modem = { version = "x.x.x", features = ["nrf9160"] }
 ```
-The `nrf9160` feature is enabled by default for legacy support. To use this library on another supported chip (e.g., `nrf9151`), select that feature and disable default feautes.
 
+nrf9161:
 ```toml
 [dependencies]
-nrf-modem = { version = "0.5.0", default-featues = false, features = ["nrf9151"] }
+nrf-modem = { version = "x.x.x", features = ["nrf9161"] }
+```
+
+nrf9151:
+```toml
+[dependencies]
+nrf-modem = { version = "x.x.x", features = ["nrf9151"] }
 ```
 
 ## Errors and recovery
