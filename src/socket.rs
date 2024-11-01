@@ -746,6 +746,8 @@ pub enum SocketOptionError {
     OutOfMemory,
     // Insufficient resources are available in the system to complete the call.
     OutOfResources,
+    // Unknown error, last error contains return code from nrfxlib get_last_error(), look at https://github.com/nrfconnect/sdk-nrfxlib/blob/main/nfc/include/nrf_nfc_errno.h
+    Unknown { errno: i32, last_error: isize },
 }
 
 impl From<i32> for SocketOptionError {
@@ -758,7 +760,10 @@ impl From<i32> for SocketOptionError {
             nrfxlib_sys::NRF_ENOTSOCK => SocketOptionError::NotASocket,
             nrfxlib_sys::NRF_ENOMEM => SocketOptionError::OutOfMemory,
             nrfxlib_sys::NRF_ENOBUFS => SocketOptionError::OutOfResources,
-            _ => panic!("Unknown error code: {}", errno),
+            _ => SocketOptionError::Unknown {
+                errno,
+                last_error: get_last_error(),
+            },
         }
     }
 }
