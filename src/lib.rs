@@ -17,6 +17,7 @@ mod at_notifications;
 mod cancellation;
 mod dns;
 mod dtls_socket;
+mod tls_stream;
 mod error;
 pub mod ffi;
 mod gnss;
@@ -36,12 +37,15 @@ pub use at_notifications::AtNotificationStream;
 pub use cancellation::CancellationToken;
 pub use dns::*;
 pub use dtls_socket::*;
+pub use tls_stream::*;
 pub use error::Error;
 pub use gnss::*;
 pub use lte_link::LteLink;
 pub use sms::*;
 pub use tcp_stream::*;
 pub use udp_socket::*;
+pub use socket::PeerVerification;
+pub use socket::CipherSuite;
 
 #[cfg(feature = "nrf9160")]
 use nrf9160_pac as pac;
@@ -128,7 +132,7 @@ pub async fn init_with_custom_layout(
     static PARAMS: grounded::uninit::GroundedCell<nrfxlib_sys::nrf_modem_init_params> =
         grounded::uninit::GroundedCell::uninit();
 
-    let params = nrfxlib_sys::nrf_modem_init_params {
+        let params = nrfxlib_sys::nrf_modem_init_params {
         shmem: nrfxlib_sys::nrf_modem_shmem_cfg {
             ctrl: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_1 {
                 base: memory_layout.base_address,

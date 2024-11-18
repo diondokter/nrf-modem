@@ -179,23 +179,3 @@ impl OwnedDtlsSendSocket {
 
     impl_send!();
 }
-
-#[derive(Debug, Copy, Clone)]
-pub enum PeerVerification {
-    Enabled,
-    Optional,
-    Disabled,
-}
-impl PeerVerification {
-    fn as_integer(self) -> u32 {
-        match self {
-            PeerVerification::Enabled => 2,
-            PeerVerification::Optional => 1,
-            PeerVerification::Disabled => 0,
-        }
-    }
-}
-#[derive(Debug, Copy, Clone)]
-pub enum Version {
-    Dtls1v2,
-}

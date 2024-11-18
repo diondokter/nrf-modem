@@ -39,6 +39,8 @@ pub enum Error {
     /// The given memory layout falls outside of the acceptable range
     BadMemoryLayout,
     ModemAlreadyInitialized,
+    /// The modem has a maximum packet size of 2kb when receiving TLS packets
+    TlsPacketTooBig,
 }
 
 pub trait ErrorSource {
