@@ -132,7 +132,7 @@ pub async fn init_with_custom_layout(
     static PARAMS: grounded::uninit::GroundedCell<nrfxlib_sys::nrf_modem_init_params> =
         grounded::uninit::GroundedCell::uninit();
 
-        let params = nrfxlib_sys::nrf_modem_init_params {
+    let params = nrfxlib_sys::nrf_modem_init_params {
         shmem: nrfxlib_sys::nrf_modem_shmem_cfg {
             ctrl: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_1 {
                 base: memory_layout.base_address,
