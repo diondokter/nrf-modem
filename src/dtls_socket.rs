@@ -76,6 +76,10 @@ impl DtlsSocket {
 
         token: &CancellationToken,
     ) -> Result<Self, Error> {
+        if security_tags.is_empty() {
+            return Err(Error::NoSecurityTag);
+        }
+
         let inner = Socket::create(
             SocketFamily::Ipv4,
             SocketType::Datagram,

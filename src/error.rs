@@ -41,6 +41,8 @@ pub enum Error {
     ModemAlreadyInitialized,
     /// The modem has a maximum packet size of 2kb when receiving TLS packets
     TlsPacketTooBig,
+    /// tcp and udp TLS connections require at least one security tag to identify the server certificate
+    NoSecurityTag,
 }
 
 pub trait ErrorSource {
