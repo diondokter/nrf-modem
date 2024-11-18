@@ -27,11 +27,13 @@ at-commands = "0.5.2"
 no-std-net = "0.6.0"
 critical-section = "1.1"
 embassy-sync = "0.6.0"
+embassy-time = { version = "0.3.0", optional = true }
 grounded = "0.2.0"
 
 [features]
 default = []
 defmt = ["dep:defmt", "at-commands/defmt"]
+dns-async = ["dep:embassy-time"]
 
 nrf9160 = ["nrfxlib-sys/nrf9160", "dep:nrf9160-pac"]
 nrf9151 = ["nrf9120"]

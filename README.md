@@ -15,22 +15,27 @@ It can be used with any executor.
 In your own program or library, you can depend on this crate in the usual fashion.
 
 nrf9160:
+
 ```toml
 [dependencies]
 nrf-modem = { version = "x.x.x", features = ["nrf9160"] }
 ```
 
 nrf9161:
+
 ```toml
 [dependencies]
 nrf-modem = { version = "x.x.x", features = ["nrf9161"] }
 ```
 
 nrf9151:
+
 ```toml
 [dependencies]
 nrf-modem = { version = "x.x.x", features = ["nrf9151"] }
 ```
+
+ The built-in modem DNS resolver is blocking. If you want to use an async DNS resolver you can enable the feature `dns-async`. This will switch to an async implementation which uses publicly availabe DNS servers.
 
 ## Errors and recovery
 
@@ -84,7 +89,7 @@ unsafe {
     cp.NVIC.set_priority(pac::Interrupt::IPC, 0 << 5);
 }
 ```
- 
+
 ### Power
 
 The DC/DC converter is automatically enabled for you when the library is initialized.
@@ -105,6 +110,7 @@ nrf_modem::init(SystemMode {
 .await
 .unwrap();
 ```
+
 Now the library is ready to be used.
 
 ## AT Commands
