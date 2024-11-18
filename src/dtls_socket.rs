@@ -54,12 +54,14 @@ impl DtlsSocket {
         port: u16,
         peer_verify: PeerVerification,
         security_tags: &[u32],
+        ciphers: Option<&[CipherSuite]>,
     ) -> Result<Self, Error> {
         Self::connect_with_cancellation(
             hostname,
             port,
             peer_verify,
             security_tags,
+            ciphers,
             &Default::default(),
         )
         .await
@@ -70,6 +72,8 @@ impl DtlsSocket {
         port: u16,
         peer_verify: PeerVerification,
         security_tags: &[u32],
+        ciphers: Option<&[CipherSuite]>,
+
         token: &CancellationToken,
     ) -> Result<Self, Error> {
         let inner = Socket::create(
@@ -82,6 +86,11 @@ impl DtlsSocket {
         inner.set_option(SocketOption::TlsSessionCache(0))?;
         inner.set_option(SocketOption::TlsTagList(security_tags))?;
         inner.set_option(SocketOption::TlsHostName(hostname))?;
+        if let Some(ciphers) = ciphers {
+            socket.set_option(SocketOption::TlsCipherSuiteList(unsafe {
+                core::slice::from_raw_parts(ciphers.as_ptr() as *const i32, ciphers.len())
+            }))?;
+        }
 
         token.as_result()?;
 
