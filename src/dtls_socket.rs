@@ -2,7 +2,7 @@ use crate::{
     dns,
     error::Error,
     socket::{Socket, SocketFamily, SocketOption, SocketProtocol, SocketType, SplitSocketHandle},
-    CancellationToken, PeerVerification
+    CancellationToken, CipherSuite, PeerVerification,
 };
 
 use no_std_net::SocketAddr;
@@ -91,7 +91,7 @@ impl DtlsSocket {
         inner.set_option(SocketOption::TlsTagList(security_tags))?;
         inner.set_option(SocketOption::TlsHostName(hostname))?;
         if let Some(ciphers) = ciphers {
-            socket.set_option(SocketOption::TlsCipherSuiteList(unsafe {
+            inner.set_option(SocketOption::TlsCipherSuiteList(unsafe {
                 core::slice::from_raw_parts(ciphers.as_ptr() as *const i32, ciphers.len())
             }))?;
         }
