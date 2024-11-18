@@ -2,7 +2,7 @@ use crate::{
     dns,
     error::Error,
     socket::{Socket, SocketFamily, SocketOption, SocketProtocol, SocketType, SplitSocketHandle},
-    CancellationToken,
+    CancellationToken, PeerVerification
 };
 
 use no_std_net::SocketAddr;
