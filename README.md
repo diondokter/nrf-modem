@@ -81,9 +81,12 @@ MEMORY
 
 ### Secure and nonsecure operation
 
-The library can be used in secure and non-secure contexts. Some additional initialization is necessary for the secure context because the underlying libmodem C library by Nordic expects access to nonsecure memory and resources. If you do not use the memory layout defined above, you need to adapt the addresses below.
+The library can be used in secure and non-secure contexts. Some additional initialization is necessary for the secure context because the underlying libmodem C library by Nordic expects access to nonsecure memory and resources. If you do not use the memory layout defined above, you need to adapt the addresses below. 
 
 ```rust,ignore
+// Initializing embassy_nrf has to come first because it assumes POWER and CLOCK at the secure address
+let embassy_peripherals = embassy_nrf::init(Default::default());
+
 // Set IPC RAM to nonsecure
 const SPU_REGION_SIZE: u32 = 0x2000; // 8kb
 const RAM_START: u32 = 0x2000_0000; // 256kb
