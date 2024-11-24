@@ -83,6 +83,7 @@ MEMORY
 
 The library can be used in secure and non-secure contexts. Some additional initialization is necessary for the secure context because the underlying libmodem C library by Nordic expects access to nonsecure memory and resources. If you do not use the memory layout defined above, you need to adapt the addresses below. 
 
+For running in the secure context:
 ```rust,ignore
 // Initializing embassy_nrf has to come first because it assumes POWER and CLOCK at the secure address
 let embassy_peripherals = embassy_nrf::init(Default::default());
