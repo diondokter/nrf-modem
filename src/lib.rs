@@ -17,7 +17,6 @@ mod at_notifications;
 mod cancellation;
 mod dns;
 mod dtls_socket;
-mod tls_stream;
 mod error;
 pub mod ffi;
 mod gnss;
@@ -26,6 +25,7 @@ mod lte_link;
 mod sms;
 pub(crate) mod socket;
 mod tcp_stream;
+mod tls_stream;
 mod udp_socket;
 pub(crate) mod waker_node_list;
 
