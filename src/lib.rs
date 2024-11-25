@@ -37,15 +37,15 @@ pub use at_notifications::AtNotificationStream;
 pub use cancellation::CancellationToken;
 pub use dns::*;
 pub use dtls_socket::*;
-pub use tls_stream::*;
 pub use error::Error;
 pub use gnss::*;
 pub use lte_link::LteLink;
 pub use sms::*;
-pub use tcp_stream::*;
-pub use udp_socket::*;
 pub use socket::PeerVerification;
 pub use socket::CipherSuite;
+pub use tcp_stream::*;
+pub use tls_stream::*;
+pub use udp_socket::*;
 
 #[cfg(feature = "nrf9160")]
 use nrf9160_pac as pac;
