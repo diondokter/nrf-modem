@@ -486,10 +486,12 @@ impl Socket {
 
             const NRF_EWOULDBLOCK: isize = -(nrfxlib_sys::NRF_EWOULDBLOCK as isize);
             const NRF_ENOTCONN: isize = -(nrfxlib_sys::NRF_ENOTCONN as isize);
+            const NRF_EMSGSIZE: isize = -(nrfxlib_sys::NRF_EMSGSIZE as isize);
 
             match receive_result {
                 0 if !buffer.is_empty() => Poll::Ready(Err(Error::Disconnected)),
                 NRF_ENOTCONN => Poll::Ready(Err(Error::Disconnected)),
+                NRF_EMSGSIZE => Poll::Ready(Err(Error::TlsPacketTooBig)),
                 bytes_received @ 0.. => Poll::Ready(Ok(bytes_received as usize)),
                 NRF_EWOULDBLOCK => Poll::Pending,
                 error => Poll::Ready(Err(Error::NrfError(error))),
@@ -697,6 +699,7 @@ pub enum SocketOption<'a> {
     TlsPeerVerify(nrfxlib_sys::nrf_sec_peer_verify_t),
     TlsSessionCache(nrfxlib_sys::nrf_sec_session_cache_t),
     TlsTagList(&'a [nrfxlib_sys::nrf_sec_tag_t]),
+    TlsCipherSuiteList(&'a [i32]),
 }
 impl<'a> SocketOption<'a> {
     pub(crate) fn get_name(&self) -> i32 {
@@ -705,6 +708,7 @@ impl<'a> SocketOption<'a> {
             SocketOption::TlsPeerVerify(_) => nrfxlib_sys::NRF_SO_SEC_PEER_VERIFY as i32,
             SocketOption::TlsSessionCache(_) => nrfxlib_sys::NRF_SO_SEC_SESSION_CACHE as i32,
             SocketOption::TlsTagList(_) => nrfxlib_sys::NRF_SO_SEC_TAG_LIST as i32,
+            SocketOption::TlsCipherSuiteList(_) => nrfxlib_sys::NRF_SO_SEC_CIPHERSUITE_LIST as i32,
         }
     }
 
@@ -714,6 +718,7 @@ impl<'a> SocketOption<'a> {
             SocketOption::TlsPeerVerify(x) => x as *const _ as *const core::ffi::c_void,
             SocketOption::TlsSessionCache(x) => x as *const _ as *const core::ffi::c_void,
             SocketOption::TlsTagList(x) => x.as_ptr() as *const core::ffi::c_void,
+            SocketOption::TlsCipherSuiteList(x) => x.as_ptr() as *const core::ffi::c_void,
         }
     }
 
@@ -723,8 +728,56 @@ impl<'a> SocketOption<'a> {
             SocketOption::TlsPeerVerify(x) => core::mem::size_of_val(x) as u32,
             SocketOption::TlsSessionCache(x) => core::mem::size_of_val(x) as u32,
             SocketOption::TlsTagList(x) => core::mem::size_of_val(*x) as u32,
+            SocketOption::TlsCipherSuiteList(x) => core::mem::size_of_val(*x) as u32,
         }
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum PeerVerification {
+    Enabled,
+    Optional,
+    Disabled,
+}
+
+impl PeerVerification {
+    pub fn as_integer(self) -> u32 {
+        match self {
+            PeerVerification::Enabled => 2,
+            PeerVerification::Optional => 1,
+            PeerVerification::Disabled => 0,
+        }
+    }
+}
+
+/// These are the allowed cipher suites for the nrf9160 modem as per <https://docs.nordicsemi.com/bundle/nrfxlib-apis-latest/page/group_nrf_socket_tls_cipher_suites.html>
+#[repr(i32)]
+#[allow(non_camel_case_types)]
+#[derive(Debug, Copy, Clone)]
+pub enum CipherSuite {
+    TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 =
+        nrfxlib_sys::NRF_TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 as i32,
+    TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA =
+        nrfxlib_sys::NRF_TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA as i32,
+    TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 =
+        nrfxlib_sys::NRF_TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 as i32,
+    TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA =
+        nrfxlib_sys::NRF_TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA as i32,
+    TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA = nrfxlib_sys::NRF_TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA as i32,
+    TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 =
+        nrfxlib_sys::NRF_TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 as i32,
+    TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA = nrfxlib_sys::NRF_TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA as i32,
+    TLS_PSK_WITH_AES_256_CBC_SHA = nrfxlib_sys::NRF_TLS_PSK_WITH_AES_256_CBC_SHA as i32,
+    TLS_PSK_WITH_AES_128_CBC_SHA256 = nrfxlib_sys::NRF_TLS_PSK_WITH_AES_128_CBC_SHA256 as i32,
+    TLS_PSK_WITH_AES_128_CBC_SHA = nrfxlib_sys::NRF_TLS_PSK_WITH_AES_128_CBC_SHA as i32,
+    TLS_PSK_WITH_AES_128_CCM_8 = nrfxlib_sys::NRF_TLS_PSK_WITH_AES_128_CCM_8 as i32,
+    TLS_EMPTY_RENEGOTIATIONINFO_SCSV = nrfxlib_sys::NRF_TLS_EMPTY_RENEGOTIATIONINFO_SCSV as i32,
+    TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 =
+        nrfxlib_sys::NRF_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 as i32,
+    TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 =
+        nrfxlib_sys::NRF_TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 as i32,
+    TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 =
+        nrfxlib_sys::NRF_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 as i32,
 }
 
 #[derive(Debug, Clone)]
