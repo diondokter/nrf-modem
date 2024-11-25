@@ -43,6 +43,20 @@ pub enum Error {
     TlsPacketTooBig,
     /// tcp and udp TLS connections require at least one security tag to identify the server certificate
     NoSecurityTag,
+    #[cfg(feature = "dns-async")]
+    DomainNameTooLong,
+    #[cfg(feature = "dns-async")]
+    DnsCacheOverflow,
+    #[cfg(feature = "dns-async")]
+    DnsHeaderBufferOverflow,
+    #[cfg(feature = "dns-async")]
+    DnsQuestionBufferOverflow,
+    #[cfg(feature = "dns-async")]
+    DnsSocketTimeout,
+    #[cfg(feature = "dns-async")]
+    DnsSocketError,
+    #[cfg(feature = "dns-async")]
+    DnsParseFailed,
 }
 
 pub trait ErrorSource {

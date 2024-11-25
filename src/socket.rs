@@ -520,7 +520,7 @@ impl Socket {
             let mut socket_addr_store =
                 [0u8; core::mem::size_of::<nrfxlib_sys::nrf_sockaddr_in6>()];
             let socket_addr_ptr = socket_addr_store.as_mut_ptr() as *mut nrfxlib_sys::nrf_sockaddr;
-            let mut socket_addr_len = 0u32;
+            let mut socket_addr_len = socket_addr_store.len() as u32;
 
             register_socket_waker(cx.waker().clone(), self.fd, SocketDirection::In);
 

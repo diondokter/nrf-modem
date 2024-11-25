@@ -35,6 +35,8 @@ nrf9151:
 nrf-modem = { version = "x.x.x", features = ["nrf9151"] }
 ```
 
+ The built-in modem DNS resolver is blocking. If you want to use an async DNS resolver you can enable the feature `dns-async`. This will switch to an async implementation which uses publicly availabe DNS servers.
+
 ## Errors and recovery
 
 Dropping LteLink and Gnss (which also include all sockets and GnssStream) *can* lead to the modem staying active.
