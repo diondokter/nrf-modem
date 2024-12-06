@@ -7,7 +7,7 @@ use crate::{
     },
     CancellationToken, LteLink,
 };
-use no_std_net::SocketAddr;
+use core::net::SocketAddr;
 
 pub struct TlsStream {
     inner: Socket,
@@ -166,8 +166,8 @@ impl TlsStream {
         token.as_result()?;
 
         let family = match addr {
-            no_std_net::SocketAddr::V4(_) => SocketFamily::Ipv4,
-            no_std_net::SocketAddr::V6(_) => SocketFamily::Ipv6,
+            SocketAddr::V4(_) => SocketFamily::Ipv4,
+            SocketAddr::V6(_) => SocketFamily::Ipv6,
         };
 
         let socket = Socket::create(family, SocketType::Stream, SocketProtocol::Tls1v2).await?;
@@ -234,6 +234,10 @@ impl TlsStream {
     }
 }
 
+crate::embedded_io_macros::impl_error_trait!(TlsStream, Error, <>);
+crate::embedded_io_macros::impl_read_trait!(TlsStream, <>);
+crate::embedded_io_macros::impl_write_trait!(TlsStream, <>);
+
 /// A borrowed read half of an encrypted TCP stream
 pub struct TlsReadStream<'a> {
     socket: &'a TlsStream,
@@ -247,6 +251,9 @@ impl<'a> TlsReadStream<'a> {
     impl_receive!();
 }
 
+crate::embedded_io_macros::impl_error_trait!(TlsReadStream<'a>, Error, <'a>);
+crate::embedded_io_macros::impl_read_trait!(TlsReadStream<'a>, <'a>);
+
 /// A borrowed write half of an encrypted TCP stream
 pub struct TlsWriteStream<'a> {
     socket: &'a TlsStream,
@@ -259,6 +266,9 @@ impl<'a> TlsWriteStream<'a> {
 
     impl_write!();
 }
+
+crate::embedded_io_macros::impl_error_trait!(TlsWriteStream<'a>, Error, <'a>);
+crate::embedded_io_macros::impl_write_trait!(TlsWriteStream<'a>, <'a>);
 
 /// An owned read half of an acrypted TCP stream
 pub struct OwnedTlsReadStream {
@@ -280,6 +290,9 @@ impl OwnedTlsReadStream {
     }
 }
 
+crate::embedded_io_macros::impl_error_trait!(OwnedTlsReadStream, Error, <>);
+crate::embedded_io_macros::impl_read_trait!(OwnedTlsReadStream, <>);
+
 /// An owned write half of an encrypted TCP stream
 pub struct OwnedTlsWriteStream {
     stream: SplitSocketHandle,
@@ -299,3 +312,6 @@ impl OwnedTlsWriteStream {
         Ok(())
     }
 }
+
+crate::embedded_io_macros::impl_error_trait!(OwnedTlsWriteStream, Error, <>);
+crate::embedded_io_macros::impl_write_trait!(OwnedTlsWriteStream, <>);

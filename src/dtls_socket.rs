@@ -5,7 +5,7 @@ use crate::{
     CancellationToken, CipherSuite, PeerVerification,
 };
 
-use no_std_net::SocketAddr;
+use core::net::SocketAddr;
 
 pub struct DtlsSocket {
     inner: Socket,

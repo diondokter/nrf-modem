@@ -1,6 +1,6 @@
 use crate::socket::SocketFamily;
 // use core::mem::size_of;
-use no_std_net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use core::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use nrfxlib_sys::{nrf_sockaddr, nrf_sockaddr_in, nrf_sockaddr_in6};
 
 pub enum NrfSockAddr {

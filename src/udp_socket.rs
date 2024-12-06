@@ -3,7 +3,7 @@ use crate::{
     socket::{Socket, SocketFamily, SocketProtocol, SocketType, SplitSocketHandle},
     CancellationToken, LteLink,
 };
-use no_std_net::{SocketAddr, ToSocketAddrs};
+use core::net::SocketAddr;
 
 /// A socket that sends and receives UDP messages
 pub struct UdpSocket {
@@ -57,43 +57,37 @@ macro_rules! impl_send_to {
 
 impl UdpSocket {
     /// Bind a new socket to the given address
-    pub async fn bind(addr: impl ToSocketAddrs) -> Result<Self, Error> {
+    pub async fn bind(addr: SocketAddr) -> Result<Self, Error> {
         Self::bind_with_cancellation(addr, &Default::default()).await
     }
 
     /// Bind a new socket to the given address
     pub async fn bind_with_cancellation(
-        addr: impl ToSocketAddrs,
+        addr: SocketAddr,
         token: &CancellationToken,
     ) -> Result<Self, Error> {
-        let mut last_error = None;
         let lte_link = LteLink::new().await?;
-        let addrs = addr.to_socket_addrs().unwrap();
 
-        for addr in addrs {
-            token.as_result()?;
+        token.as_result()?;
 
-            let family = match addr {
-                no_std_net::SocketAddr::V4(_) => SocketFamily::Ipv4,
-                no_std_net::SocketAddr::V6(_) => SocketFamily::Ipv6,
-            };
+        let family = match addr {
+            SocketAddr::V4(_) => SocketFamily::Ipv4,
+            SocketAddr::V6(_) => SocketFamily::Ipv6,
+        };
 
-            let socket = Socket::create(family, SocketType::Datagram, SocketProtocol::Udp).await?;
+        let socket = Socket::create(family, SocketType::Datagram, SocketProtocol::Udp).await?;
 
-            match unsafe { socket.bind(addr, token).await } {
-                Ok(_) => {
-                    lte_link.deactivate().await?;
-                    return Ok(UdpSocket { inner: socket });
-                }
-                Err(e) => {
-                    last_error = Some(e);
-                    socket.deactivate().await?;
-                }
+        match unsafe { socket.bind(addr, token).await } {
+            Ok(_) => {
+                lte_link.deactivate().await?;
+                Ok(UdpSocket { inner: socket })
+            }
+            Err(e) => {
+                lte_link.deactivate().await?;
+                socket.deactivate().await?;
+                Err(e)
             }
         }
-
-        lte_link.deactivate().await?;
-        Err(last_error.take().unwrap())
     }
 
     /// Get the raw underlying file descriptor

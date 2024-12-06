@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 (2024-12-06)
+
+- Added TLS support (https://github.com/diondokter/nrf-modem/pull/26)
+- Fixed small socket addres length bug (https://github.com/diondokter/nrf-modem/pull/28)
+- Added opt-in non-blocking async DNS resolver (https://github.com/diondokter/nrf-modem/pull/27)
+  - Exposed as a cargo feature
+- Moved to `core::net` instead of using `no-std-net`
+- Move MSRV to 1.82 for the raw references and c strings
+- Added embedded-io-async traits to Tcp stream types and Tls stream types
+
 ## 0.5.1 (2024-08-28)
 
 - Fix documentation generation for docs.rs

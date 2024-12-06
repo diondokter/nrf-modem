@@ -1,6 +1,7 @@
 use crate::{
     error::Error, ffi::get_last_error, ip::NrfSockAddr, lte_link::LteLink, CancellationToken,
 };
+use core::net::SocketAddr;
 use core::{
     cell::RefCell,
     ops::{BitOr, BitOrAssign, Deref, Neg},
@@ -8,7 +9,6 @@ use core::{
     task::{Poll, Waker},
 };
 use critical_section::Mutex;
-use no_std_net::SocketAddr;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 // use 16 slots for wakers instead of 8, which is the max number of sockets allowed, so they
@@ -701,7 +701,7 @@ pub enum SocketOption<'a> {
     TlsTagList(&'a [nrfxlib_sys::nrf_sec_tag_t]),
     TlsCipherSuiteList(&'a [i32]),
 }
-impl<'a> SocketOption<'a> {
+impl SocketOption<'_> {
     pub(crate) fn get_name(&self) -> i32 {
         match self {
             SocketOption::TlsHostName(_) => nrfxlib_sys::NRF_SO_SEC_HOSTNAME as i32,

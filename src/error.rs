@@ -59,6 +59,38 @@ pub enum Error {
     DnsParseFailed,
 }
 
+impl embedded_io_async::Error for Error {
+    fn kind(&self) -> embedded_io_async::ErrorKind {
+        match self {
+            Error::ModemNotInitialized => embedded_io_async::ErrorKind::Other,
+            Error::GnssAlreadyTaken => embedded_io_async::ErrorKind::Other,
+            Error::NrfError(_) => embedded_io_async::ErrorKind::Other,
+            Error::BufferTooSmall(_) => embedded_io_async::ErrorKind::OutOfMemory,
+            Error::OutOfMemory => embedded_io_async::ErrorKind::OutOfMemory,
+            Error::AtParseError(_) => embedded_io_async::ErrorKind::Other,
+            Error::InvalidSystemModeConfig => embedded_io_async::ErrorKind::Other,
+            Error::StringNotNulTerminated => embedded_io_async::ErrorKind::InvalidInput,
+            Error::Utf8Error => embedded_io_async::ErrorKind::InvalidInput,
+            Error::LteRegistrationDenied => embedded_io_async::ErrorKind::Other,
+            Error::SimFailure => embedded_io_async::ErrorKind::Other,
+            Error::UnexpectedAtResponse => embedded_io_async::ErrorKind::Other,
+            Error::HostnameNotAscii => embedded_io_async::ErrorKind::InvalidInput,
+            Error::HostnameTooLong => embedded_io_async::ErrorKind::InvalidInput,
+            Error::AddressNotFound => embedded_io_async::ErrorKind::Other,
+            Error::SocketOptionError(_) => embedded_io_async::ErrorKind::Other,
+            Error::OperationCancelled => embedded_io_async::ErrorKind::Other,
+            Error::SmsNumberNotAscii => embedded_io_async::ErrorKind::Other,
+            Error::Disconnected => embedded_io_async::ErrorKind::ConnectionReset,
+            Error::TooManyLteLinks => embedded_io_async::ErrorKind::Other,
+            Error::InternalRuntimeMutexLocked => embedded_io_async::ErrorKind::Other,
+            Error::BadMemoryLayout => embedded_io_async::ErrorKind::Other,
+            Error::ModemAlreadyInitialized => embedded_io_async::ErrorKind::Other,
+            Error::TlsPacketTooBig => embedded_io_async::ErrorKind::Other,
+            Error::NoSecurityTag => embedded_io_async::ErrorKind::Other,
+        }
+    }
+}
+
 pub trait ErrorSource {
     fn into_result(self) -> Result<(), Error>;
 }

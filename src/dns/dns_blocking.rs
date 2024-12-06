@@ -1,7 +1,7 @@
 use crate::{ip::NrfSockAddr, lte_link::LteLink, CancellationToken, Error};
 use arrayvec::ArrayString;
+use core::net::{IpAddr, SocketAddr};
 use core::str::FromStr;
-use no_std_net::{IpAddr, SocketAddr};
 
 /// Get the IP address that corresponds to the given hostname.
 ///

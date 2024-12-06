@@ -104,7 +104,7 @@ pub fn send_at_blocking<const CAP: usize>(command: &str) -> Result<ArrayString<C
             nrfxlib_sys::nrf_modem_at_cmd(
                 buffer.as_mut_ptr() as _,
                 buffer.len(),
-                b"%.*s\0".as_ptr() as *const core::ffi::c_char,
+                c"%.*s".as_ptr() as *const core::ffi::c_char,
                 command.len(),
                 command.as_ptr(),
             )
@@ -117,7 +117,7 @@ pub fn send_at_blocking<const CAP: usize>(command: &str) -> Result<ArrayString<C
     } else {
         unsafe {
             nrfxlib_sys::nrf_modem_at_printf(
-                b"%.*s\0".as_ptr() as *const core::ffi::c_char,
+                c"%.*s".as_ptr() as *const core::ffi::c_char,
                 command.len(),
                 command.as_ptr(),
             )
@@ -139,7 +139,7 @@ struct SendATFuture<'c, const CAP: usize> {
     response: [u8; CAP],
 }
 
-impl<'c, const CAP: usize> Future for SendATFuture<'c, CAP> {
+impl<const CAP: usize> Future for SendATFuture<'_, CAP> {
     type Output = Result<ArrayString<CAP>, Error>;
 
     fn poll(
@@ -175,7 +175,7 @@ impl<'c, const CAP: usize> Future for SendATFuture<'c, CAP> {
                 let result = unsafe {
                     nrfxlib_sys::nrf_modem_at_cmd_async(
                         Some(at_callback),
-                        b"%.*s\0".as_ptr() as *const core::ffi::c_char,
+                        c"%.*s".as_ptr() as *const core::ffi::c_char,
                         self.command.len(),
                         self.command.as_ptr(),
                     )
@@ -214,7 +214,7 @@ impl<'c, const CAP: usize> Future for SendATFuture<'c, CAP> {
     }
 }
 
-impl<'c, const CAP: usize> Drop for SendATFuture<'c, CAP> {
+impl<const CAP: usize> Drop for SendATFuture<'_, CAP> {
     fn drop(&mut self) {
         match self.state {
             SendATState::WaitingOnAccess => {}

@@ -17,6 +17,7 @@ mod at_notifications;
 mod cancellation;
 mod dns;
 mod dtls_socket;
+pub(crate) mod embedded_io_macros;
 mod error;
 pub mod ffi;
 mod gnss;
@@ -29,7 +30,6 @@ mod tls_stream;
 mod udp_socket;
 pub(crate) mod waker_node_list;
 
-pub use no_std_net;
 pub use nrfxlib_sys;
 
 pub use at::*;
@@ -71,7 +71,7 @@ type WrappedHeap = Mutex<RefCell<Option<Heap>>>;
 static LIBRARY_ALLOCATOR: WrappedHeap = Mutex::new(RefCell::new(None));
 
 /// Our transmit heap.
-
+///
 /// We initalise this later using a special region of shared memory that can be
 /// seen by the Cortex-M33 and the modem CPU.
 static TX_ALLOCATOR: WrappedHeap = Mutex::new(RefCell::new(None));
@@ -119,12 +119,14 @@ pub async fn init_with_custom_layout(
     }
 
     unsafe {
+        const HEAP_SIZE: usize = 1024;
         /// Allocate some space in global data to use as a heap.
-        static mut HEAP_MEMORY: [u32; 1024] = [0u32; 1024];
-        let heap_start = HEAP_MEMORY.as_ptr() as *mut u8;
-        let heap_size = HEAP_MEMORY.len() * core::mem::size_of::<u32>();
+        static mut HEAP_MEMORY: [u32; HEAP_SIZE] = [0u32; HEAP_SIZE];
+        let heap_start = &raw mut HEAP_MEMORY;
+        let heap_size = HEAP_SIZE * core::mem::size_of::<u32>();
         critical_section::with(|cs| {
-            *LIBRARY_ALLOCATOR.borrow(cs).borrow_mut() = Some(Heap::new(heap_start, heap_size))
+            *LIBRARY_ALLOCATOR.borrow(cs).borrow_mut() =
+                Some(Heap::new(heap_start.cast::<u8>(), heap_size))
         });
     }
 
@@ -210,7 +212,7 @@ pub async fn init_with_custom_layout(
 /// The full range needs to be in the lower 128k of ram.
 /// This also contains the fixed [nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE].
 ///
-/// Nordic guide: https://developer.nordicsemi.com/nRF_Connect_SDK/doc/2.4.1/nrfxlib/nrf_modem/doc/architecture.html#shared-memory-configuration
+/// Nordic guide: <https://developer.nordicsemi.com/nRF_Connect_SDK/doc/2.4.1/nrfxlib/nrf_modem/doc/architecture.html#shared-memory-configuration>
 pub struct MemoryLayout {
     /// The start of the memory area
     pub base_address: u32,

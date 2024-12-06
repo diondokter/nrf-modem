@@ -1,8 +1,8 @@
 [package]
 name = "nrf-modem"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
-rust-version = "1.64"
+rust-version = "1.82"
 license = "MIT OR Apache-2.0"
 description = "Async modem api for the nRF91xx"
 homepage = "https://github.com/diondokter/nrf-modem"
@@ -24,11 +24,11 @@ arrayvec = { version = "0.7", default-features = false }
 nrf9160-pac = { version = "0.12.2", optional = true }
 nrf9120-pac = { version = "0.12.2", optional = true }
 at-commands = "0.5.2"
-no-std-net = "0.6.0"
 critical-section = "1.1"
 embassy-sync = "0.6.0"
 embassy-time = { version = "0.3.0", optional = true }
 grounded = "0.2.0"
+embedded-io-async = "0.6.1"
 
 [features]
 default = []

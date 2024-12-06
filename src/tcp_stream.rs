@@ -3,7 +3,7 @@ use crate::{
     socket::{Socket, SocketFamily, SocketProtocol, SocketType, SplitSocketHandle},
     CancellationToken, LteLink,
 };
-use no_std_net::ToSocketAddrs;
+use core::net::SocketAddr;
 
 /// A TCP stream that is connected to another endpoint
 pub struct TcpStream {
@@ -105,43 +105,37 @@ macro_rules! impl_write {
 
 impl TcpStream {
     /// Connect a TCP stream to the given address
-    pub async fn connect(addr: impl ToSocketAddrs) -> Result<Self, Error> {
+    pub async fn connect(addr: SocketAddr) -> Result<Self, Error> {
         Self::connect_with_cancellation(addr, &Default::default()).await
     }
 
     /// Connect a TCP stream to the given address
     pub async fn connect_with_cancellation(
-        addr: impl ToSocketAddrs,
+        addr: SocketAddr,
         token: &CancellationToken,
     ) -> Result<Self, Error> {
-        let mut last_error = None;
         let lte_link = LteLink::new().await?;
-        let addrs = addr.to_socket_addrs().unwrap();
 
-        for addr in addrs {
-            token.as_result()?;
+        token.as_result()?;
 
-            let family = match addr {
-                no_std_net::SocketAddr::V4(_) => SocketFamily::Ipv4,
-                no_std_net::SocketAddr::V6(_) => SocketFamily::Ipv6,
-            };
+        let family = match addr {
+            SocketAddr::V4(_) => SocketFamily::Ipv4,
+            SocketAddr::V6(_) => SocketFamily::Ipv6,
+        };
 
-            let socket = Socket::create(family, SocketType::Stream, SocketProtocol::Tcp).await?;
+        let socket = Socket::create(family, SocketType::Stream, SocketProtocol::Tcp).await?;
 
-            match unsafe { socket.connect(addr, token).await } {
-                Ok(_) => {
-                    lte_link.deactivate().await?;
-                    return Ok(TcpStream { inner: socket });
-                }
-                Err(e) => {
-                    last_error = Some(e);
-                    socket.deactivate().await?;
-                }
+        match unsafe { socket.connect(addr, token).await } {
+            Ok(_) => {
+                lte_link.deactivate().await?;
+                Ok(TcpStream { inner: socket })
+            }
+            Err(e) => {
+                lte_link.deactivate().await?;
+                socket.deactivate().await?;
+                Err(e)
             }
         }
-
-        lte_link.deactivate().await?;
-        Err(last_error.take().unwrap())
     }
 
     /// Get the raw underlying file descriptor for when you need to interact with the nrf libraries directly
@@ -184,6 +178,10 @@ impl TcpStream {
     }
 }
 
+crate::embedded_io_macros::impl_error_trait!(TcpStream, Error, <>);
+crate::embedded_io_macros::impl_read_trait!(TcpStream, <>);
+crate::embedded_io_macros::impl_write_trait!(TcpStream, <>);
+
 /// A borrowed read half of a TCP stream
 pub struct TcpReadStream<'a> {
     stream: &'a TcpStream,
@@ -197,6 +195,9 @@ impl<'a> TcpReadStream<'a> {
     impl_receive!();
 }
 
+crate::embedded_io_macros::impl_error_trait!(TcpReadStream<'a>, Error, <'a>);
+crate::embedded_io_macros::impl_read_trait!(TcpReadStream<'a>, <'a>);
+
 /// A borrowed write half of a TCP stream
 pub struct TcpWriteStream<'a> {
     stream: &'a TcpStream,
@@ -209,6 +210,9 @@ impl<'a> TcpWriteStream<'a> {
 
     impl_write!();
 }
+
+crate::embedded_io_macros::impl_error_trait!(TcpWriteStream<'a>, Error, <'a>);
+crate::embedded_io_macros::impl_write_trait!(TcpWriteStream<'a>, <'a>);
 
 /// An owned read half of a TCP stream
 pub struct OwnedTcpReadStream {
@@ -230,6 +234,9 @@ impl OwnedTcpReadStream {
     }
 }
 
+crate::embedded_io_macros::impl_error_trait!(OwnedTcpReadStream, Error, <>);
+crate::embedded_io_macros::impl_read_trait!(OwnedTcpReadStream, <>);
+
 /// An owned write half of a TCP stream
 pub struct OwnedTcpWriteStream {
     stream: SplitSocketHandle,
@@ -249,3 +256,6 @@ impl OwnedTcpWriteStream {
         Ok(())
     }
 }
+
+crate::embedded_io_macros::impl_error_trait!(OwnedTcpWriteStream, Error, <>);
+crate::embedded_io_macros::impl_write_trait!(OwnedTcpWriteStream, <>);
