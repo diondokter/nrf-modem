@@ -39,6 +39,10 @@ pub enum Error {
     /// The given memory layout falls outside of the acceptable range
     BadMemoryLayout,
     ModemAlreadyInitialized,
+    /// The modem has a maximum packet size of 2kb when receiving TLS packets
+    TlsPacketTooBig,
+    /// tcp and udp TLS connections require at least one security tag to identify the server certificate
+    NoSecurityTag,
     #[cfg(feature = "dns-async")]
     DomainNameTooLong,
     #[cfg(feature = "dns-async")]

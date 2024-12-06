@@ -2,7 +2,7 @@ use crate::{
     dns,
     error::Error,
     socket::{Socket, SocketFamily, SocketOption, SocketProtocol, SocketType, SplitSocketHandle},
-    CancellationToken,
+    CancellationToken, CipherSuite, PeerVerification,
 };
 
 use no_std_net::SocketAddr;
@@ -54,12 +54,14 @@ impl DtlsSocket {
         port: u16,
         peer_verify: PeerVerification,
         security_tags: &[u32],
+        ciphers: Option<&[CipherSuite]>,
     ) -> Result<Self, Error> {
         Self::connect_with_cancellation(
             hostname,
             port,
             peer_verify,
             security_tags,
+            ciphers,
             &Default::default(),
         )
         .await
@@ -70,8 +72,14 @@ impl DtlsSocket {
         port: u16,
         peer_verify: PeerVerification,
         security_tags: &[u32],
+        ciphers: Option<&[CipherSuite]>,
+
         token: &CancellationToken,
     ) -> Result<Self, Error> {
+        if security_tags.is_empty() {
+            return Err(Error::NoSecurityTag);
+        }
+
         let inner = Socket::create(
             SocketFamily::Ipv4,
             SocketType::Datagram,
@@ -82,6 +90,11 @@ impl DtlsSocket {
         inner.set_option(SocketOption::TlsSessionCache(0))?;
         inner.set_option(SocketOption::TlsTagList(security_tags))?;
         inner.set_option(SocketOption::TlsHostName(hostname))?;
+        if let Some(ciphers) = ciphers {
+            inner.set_option(SocketOption::TlsCipherSuiteList(unsafe {
+                core::slice::from_raw_parts(ciphers.as_ptr() as *const i32, ciphers.len())
+            }))?;
+        }
 
         token.as_result()?;
 
@@ -178,24 +191,4 @@ impl OwnedDtlsSendSocket {
     }
 
     impl_send!();
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum PeerVerification {
-    Enabled,
-    Optional,
-    Disabled,
-}
-impl PeerVerification {
-    fn as_integer(self) -> u32 {
-        match self {
-            PeerVerification::Enabled => 2,
-            PeerVerification::Optional => 1,
-            PeerVerification::Disabled => 0,
-        }
-    }
-}
-#[derive(Debug, Copy, Clone)]
-pub enum Version {
-    Dtls1v2,
 }

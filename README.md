@@ -48,6 +48,10 @@ If anything does go wrong, `has_runtime_state_error()` will return true.
 Everything should stay working, but it's likely that the modem won't be properly turned off.
 This can be recovered by calling the `reset_runtime_state()` function when you've made sure nothing of the modem is used anymore.
 
+## Receiving packets with TLS
+
+When receiving packets with TLS enabled, the nrf9160 modem can handle a maximum packet size of 2kB which is well below the default settings for most servers ([see](https://devzone.nordicsemi.com/f/nordic-q-a/88768/socket-recv-returning--122-nrf9160) [here](https://devzone.nordicsemi.com/f/nordic-q-a/91700/unusual-socket-errno-122-when-using-nrf91-tls-psk)). The library will throw an error with the variant `TlsPacketTooBig` if the modem receives a packet over this size. You will need to change settings at the server side if this error occurs, or use a proxy server.
+
 ## Setup
 
 There are a couple of things you must do to be able to use the library.
@@ -64,14 +68,55 @@ This library has been tested with modem firmware version `1.3.4` but might work 
 When this library starts to require a newer version, then that will be seen as a breaking change.
 But it's easy to miss something, so this is a 'best effort' guarantee only.
 
-### Nonsecure
+### Memory
 
-Nordic has made it so that the modem can only be used when in the nonsecure context.
-Make sure you are in that context by using e.g. the SPM or TF-M.
+The model library from Nordic needs some memory for its state and buffers. You need to reserve some memory in your memory.x file for the modem:
+
+```ld
+MEMORY
+{
+    FLASH : ORIGIN = 0x00000000, LENGTH = 1024K
+    MODEM : ORIGIN = 0x20000000, LENGTH = 32K
+    RAM   : ORIGIN = 0x20008000, LENGTH = 224K
+}
+```
+
+### Secure and nonsecure operation
+
+The library can be used in secure and non-secure contexts. Some additional initialization is necessary for the secure context because the underlying libmodem C library by Nordic expects access to nonsecure memory and resources. If you do not use the memory layout defined above, you need to adapt the addresses below. 
+
+For running in the secure context:
+```rust,ignore
+// Initializing embassy_nrf has to come first because it assumes POWER and CLOCK at the secure address
+let embassy_peripherals = embassy_nrf::init(Default::default());
+
+// Set IPC RAM to nonsecure
+const SPU_REGION_SIZE: u32 = 0x2000; // 8kb
+const RAM_START: u32 = 0x2000_0000; // 256kb
+let spu = embassy_nrf::pac::SPU;
+let region_start = 0x2000_000 - RAM_START / SPU_REGION_SIZE;
+let region_end = region_start + (0x2000_8000 - 0x2000_0000) / SPU_REGION_SIZE;
+for i in region_start..region_end {
+    spu.ramregion(i as usize).perm().write(|w| {
+        w.set_execute(true);
+        w.set_write(true);
+        w.set_read(true);
+        w.set_secattr(false);
+        w.set_lock(false);
+    })
+}
+
+// Set regulator access registers to nonsecure
+spu.periphid(4).perm().write(|w| w.set_secattr(false));
+// Set clock and power access registers to nonsecure
+spu.periphid(5).perm().write(|w| w.set_secattr(false));
+// Set IPC access register to nonsecure
+spu.periphid(42).perm().write(|w| w.set_secattr(false));
+```
 
 ### Interrupts
 
-The `EGU1` and `IPC` interrupts must be routed to the modem software.
+The `IPC` interrupts must be routed to the modem software.
 
 ```rust,ignore
 // Interrupt Handler for LTE related hardware. Defer straight to the library.
@@ -169,4 +214,35 @@ let (response, source_addr) = socket.receive_from(&mut buffer).await.unwrap();
 
 println!("Result: {:X}", response);
 println!("Source: {}", source_addr);
+```
+
+## Secure tcp connection over TLS
+
+Before this can run, you need to store the required certificate in a security tag on the modem using AT commands. See the [Nordic Docs](https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/modem/modem_key_mgmt.html) on how to do this. TLS handshake will be much faster if you enforce an efficient cipher suite like `TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256`.
+
+```rust,ignore
+    let stream = nrf_modem::TlsStream::connect(
+        "example.com",
+        443,
+        PeerVerification::Optional,
+        &[ROOT_PEM],
+        None,
+    )
+    .await
+    .unwrap();
+
+    stream
+        .write("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n".as_bytes())
+        .await
+        .unwrap();
+
+    let mut buffer = [0; 1024];
+    let received = stream
+        .receive(&mut buffer)
+        .await
+        .unwrap();
+
+    // Drop the stream async (normal Drop is ok too, but that's blocking)
+    stream
+        .deactivate().await.unwrap();
 ```
