@@ -1,8 +1,8 @@
 use crate::{dns::dns_cache::DnsCache, CancellationToken, Error, LteLink, UdpSocket};
+use core::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
 use core::{cell::RefCell, convert::TryInto};
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
 use embassy_time::Duration;
-use no_std_net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
 
 const DNS_SERVERS: [[u8; 4]; 8] = [
     [8, 8, 8, 8],
@@ -81,7 +81,7 @@ struct DNSQuestion<'a> {
     qclass: u16,
 }
 
-impl<'a> DNSQuestion<'a> {
+impl DNSQuestion<'_> {
     fn write(&self, buffer: &mut [u8], mut pos: usize) -> Result<usize, Error> {
         // Encode the domain name into the QNAME field
         for label in self.qname.split('.') {
@@ -358,7 +358,7 @@ async fn process_dns_response(response: &[u8], transaction_id: u16) -> Result<Ip
                     .lock()
                     .await
                     .borrow_mut()
-                    .insert(&hostname, &addr, ttl)?;
+                    .insert(hostname, &addr, ttl)?;
                 return Ok(addr);
             }
             28 if rdlength == 16 => {
@@ -368,7 +368,7 @@ async fn process_dns_response(response: &[u8], transaction_id: u16) -> Result<Ip
                     .lock()
                     .await
                     .borrow_mut()
-                    .insert(&hostname, &addr, ttl)?;
+                    .insert(hostname, &addr, ttl)?;
                 return Ok(addr);
             }
             _ => {
