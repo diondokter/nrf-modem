@@ -416,8 +416,9 @@ impl GnssData {
                     )
                     .into_result()?;
 
-                    let data =
-                        core::mem::transmute::<[i8; 83], [u8; 83]>(data.assume_init().nmea_str); // Make data be u8
+                    // Allow transmute warnings. Sometimes apparently the nmea_str is a `u8` array already
+                    #[allow(clippy::useless_transmute, clippy::missing_transmute_annotations)]
+                    let data = core::mem::transmute::<_, [u8; 83]>(data.assume_init().nmea_str); // Make data be u8
                     let mut string_data = ArrayString::from_byte_string(&data)?;
                     string_data.truncate(
                         string_data
