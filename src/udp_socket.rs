@@ -135,7 +135,7 @@ pub struct UdpReceiveSocket<'a> {
     socket: &'a UdpSocket,
 }
 
-impl<'a> UdpReceiveSocket<'a> {
+impl UdpReceiveSocket<'_> {
     fn socket(&self) -> &Socket {
         &self.socket.inner
     }
@@ -148,7 +148,7 @@ pub struct UdpSendSocket<'a> {
     socket: &'a UdpSocket,
 }
 
-impl<'a> UdpSendSocket<'a> {
+impl UdpSendSocket<'_> {
     fn socket(&self) -> &Socket {
         &self.socket.inner
     }
