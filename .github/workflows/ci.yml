@@ -17,9 +17,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
-          components: clippy, rustfmt, llvm-tools-preview
+          components: clippy, rustfmt, llvm-tools
           targets: thumbv8m.main-none-eabihf
 
       - run: cargo fmt -- --check
       - run: cargo clippy --features nrf9160 --target thumbv8m.main-none-eabihf
+      - run: cargo clippy --features nrf9160,dns-async,defmt --target thumbv8m.main-none-eabihf
       - run: cargo clippy --features nrf9151 --target thumbv8m.main-none-eabihf

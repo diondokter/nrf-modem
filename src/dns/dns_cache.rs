@@ -1,5 +1,5 @@
 use crate::Error;
-use no_std_net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// The maximum domain name length
 const MAX_DOMAIN_LEN: usize = 256;
@@ -51,13 +51,13 @@ impl DnsCache {
         match ip {
             IpAddr::V4(ipv4_addr) => defmt::trace!(
                 "create dns cache entry with {} -> {} and ttl {}",
-                core::str::from_utf8(&hostname).unwrap(),
+                core::str::from_utf8(hostname).unwrap(),
                 ipv4_addr.octets(),
                 ttl
             ),
             IpAddr::V6(ipv6_addr) => defmt::trace!(
                 "create dns cache entry with {} -> {} and ttl {}",
-                core::str::from_utf8(&hostname).unwrap(),
+                core::str::from_utf8(hostname).unwrap(),
                 ipv6_addr.octets(),
                 ttl
             ),

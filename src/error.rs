@@ -87,6 +87,20 @@ impl embedded_io_async::Error for Error {
             Error::ModemAlreadyInitialized => embedded_io_async::ErrorKind::Other,
             Error::TlsPacketTooBig => embedded_io_async::ErrorKind::Other,
             Error::NoSecurityTag => embedded_io_async::ErrorKind::Other,
+            #[cfg(feature = "dns-async")]
+            Error::DomainNameTooLong => embedded_io_async::ErrorKind::InvalidInput,
+            #[cfg(feature = "dns-async")]
+            Error::DnsCacheOverflow => embedded_io_async::ErrorKind::Other,
+            #[cfg(feature = "dns-async")]
+            Error::DnsHeaderBufferOverflow => embedded_io_async::ErrorKind::Other,
+            #[cfg(feature = "dns-async")]
+            Error::DnsQuestionBufferOverflow => embedded_io_async::ErrorKind::Other,
+            #[cfg(feature = "dns-async")]
+            Error::DnsSocketTimeout => embedded_io_async::ErrorKind::TimedOut,
+            #[cfg(feature = "dns-async")]
+            Error::DnsSocketError => embedded_io_async::ErrorKind::Other,
+            #[cfg(feature = "dns-async")]
+            Error::DnsParseFailed => embedded_io_async::ErrorKind::Other,
         }
     }
 }

@@ -243,7 +243,7 @@ pub struct TlsReadStream<'a> {
     socket: &'a TlsStream,
 }
 
-impl<'a> TlsReadStream<'a> {
+impl TlsReadStream<'_> {
     fn socket(&self) -> &Socket {
         &self.socket.inner
     }
@@ -259,7 +259,7 @@ pub struct TlsWriteStream<'a> {
     socket: &'a TlsStream,
 }
 
-impl<'a> TlsWriteStream<'a> {
+impl TlsWriteStream<'_> {
     fn socket(&self) -> &Socket {
         &self.socket.inner
     }

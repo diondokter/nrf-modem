@@ -187,7 +187,7 @@ pub struct TcpReadStream<'a> {
     stream: &'a TcpStream,
 }
 
-impl<'a> TcpReadStream<'a> {
+impl TcpReadStream<'_> {
     fn socket(&self) -> &Socket {
         &self.stream.inner
     }
@@ -203,7 +203,7 @@ pub struct TcpWriteStream<'a> {
     stream: &'a TcpStream,
 }
 
-impl<'a> TcpWriteStream<'a> {
+impl TcpWriteStream<'_> {
     fn socket(&self) -> &Socket {
         &self.stream.inner
     }

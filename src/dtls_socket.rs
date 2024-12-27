@@ -149,7 +149,7 @@ pub struct DtlsReceiveSocket<'a> {
     socket: &'a DtlsSocket,
 }
 
-impl<'a> DtlsReceiveSocket<'a> {
+impl DtlsReceiveSocket<'_> {
     fn socket(&self) -> &Socket {
         &self.socket.inner
     }
@@ -161,7 +161,7 @@ pub struct DtlsSendSocket<'a> {
     socket: &'a DtlsSocket,
 }
 
-impl<'a> DtlsSendSocket<'a> {
+impl DtlsSendSocket<'_> {
     fn socket(&self) -> &Socket {
         &self.socket.inner
     }
