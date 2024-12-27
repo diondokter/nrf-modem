@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1 (2024-12-27)
+
+- Made some code more open to different bindgen generation that apparently can happen
+- Fixed async dns where it wasn't properly updated to `core::net`
+
 ## 0.6.0 (2024-12-06)
 
 - Added TLS support (https://github.com/diondokter/nrf-modem/pull/26)
