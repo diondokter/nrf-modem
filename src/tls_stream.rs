@@ -117,12 +117,14 @@ impl TlsStream {
     /// - `peer_verify`: The peer verification policy to apply. Determines how the connection verifies the server's identity.
     /// - `security_tags`: A slice of [security tag](https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/modem/modem_key_mgmt.html) identifiers containing security elements.
     /// - `ciphers`: An optional slice of IANA cipher suite identifiers to use for the connection. If `None`, the default set of ciphers is used.
+    /// - `resume_sessions`: Enable TLS session tickets, managed by the modem.
     pub async fn connect(
         hostname: &str,
         port: u16,
         peer_verify: PeerVerification,
         security_tags: &[u32],
         ciphers: Option<&[CipherSuite]>,
+        resume_sessions: bool,
     ) -> Result<Self, Error> {
         Self::connect_with_cancellation(
             hostname,
@@ -130,6 +132,7 @@ impl TlsStream {
             peer_verify,
             security_tags,
             ciphers,
+            resume_sessions,
             &Default::default(),
         )
         .await
@@ -145,6 +148,7 @@ impl TlsStream {
     /// - `peer_verify`: The peer verification policy to apply. Determines how the connection verifies the server's identity.
     /// - `security_tags`: A slice of [security tag](https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/modem/modem_key_mgmt.html) identifiers containing security elements.
     /// - `ciphers`: An optional slice of IANA cipher suite identifiers to use for the connection. If `None`, the default set of ciphers is used.
+    /// - `resume_sessions`: Enable TLS session tickets, managed by the modem.
     /// - `token`: A [`CancellationToken`] that can be used to cancel the connection attempt.
     pub async fn connect_with_cancellation(
         hostname: &str,
@@ -152,6 +156,7 @@ impl TlsStream {
         peer_verify: PeerVerification,
         security_tags: &[u32],
         ciphers: Option<&[CipherSuite]>,
+        resume_sessions: bool,
         token: &CancellationToken,
     ) -> Result<Self, Error> {
         if security_tags.is_empty() {
@@ -172,7 +177,7 @@ impl TlsStream {
 
         let socket = Socket::create(family, SocketType::Stream, SocketProtocol::Tls1v2).await?;
         socket.set_option(SocketOption::TlsPeerVerify(peer_verify.as_integer()))?;
-        socket.set_option(SocketOption::TlsSessionCache(0))?;
+        socket.set_option(SocketOption::TlsSessionCache(resume_sessions as _))?;
         socket.set_option(SocketOption::TlsTagList(security_tags))?;
         socket.set_option(SocketOption::TlsHostName(hostname))?;
         if let Some(ciphers) = ciphers {
