@@ -2,7 +2,7 @@
 name = "nrf-modem"
 version = "0.6.1"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 description = "Async modem api for the nRF91xx"
 homepage = "https://github.com/diondokter/nrf-modem"
@@ -34,6 +34,7 @@ embedded-io-async = "0.6.1"
 default = []
 defmt = ["dep:defmt", "at-commands/defmt"]
 dns-async = ["dep:embassy-time"]
+modem-trace = []
 
 nrf9160 = ["nrfxlib-sys/nrf9160", "dep:nrf9160-pac"]
 nrf9151 = ["nrf9120"]
