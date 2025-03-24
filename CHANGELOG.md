@@ -4,6 +4,7 @@
 
 - Improve handling of XSYSTEMMODE command
 - *Breaking:* Updated to nrfxlib-sys 2.9.1
+- Add helper to get tracing data out of the nrfxlib modem driver. Feature: `modem-trace`
 
 ## 0.6.1 (2024-12-27)
 

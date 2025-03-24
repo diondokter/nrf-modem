@@ -5,7 +5,7 @@
 use crate::error::ErrorSource;
 use core::{
     cell::RefCell,
-    ops::Range,
+    ops::{AsyncFn, Range},
     sync::atomic::{AtomicBool, Ordering},
 };
 use critical_section::Mutex;
@@ -111,6 +111,11 @@ pub async fn init_with_custom_layout(
         return Err(Error::BadMemoryLayout);
     }
 
+    #[cfg(feature = "modem-trace")]
+    if memory_layout.trace_area_size == 0 {
+        return Err(Error::BadMemoryLayout);
+    }
+
     // The modem is only certified when the DC/DC converter is enabled and it isn't by default
     unsafe {
         (*pac::REGULATORS_NS::PTR)
@@ -178,6 +183,10 @@ pub async fn init_with_custom_layout(
     // OK, let's start the library
     unsafe { nrfxlib_sys::nrf_modem_init(PARAMS.get()) }.into_result()?;
 
+    // Start tracing
+    #[cfg(feature = "modem-trace")]
+    at::send_at::<0>("AT%XMODEMTRACE=1,2").await?;
+
     // Initialize AT notifications
     at_notifications::initialize()?;
 
@@ -207,6 +216,42 @@ pub async fn init_with_custom_layout(
     Ok(())
 }
 
+/// Fetch traces from the modem
+///
+/// Make sure to enable the `modem-trace` feature. Call this function regularly
+/// to ensure the trace buffer doesn't overflow.
+///
+/// `cb` will be called for every chunk of tracing data.
+#[cfg(feature = "modem-trace")]
+pub async fn fetch_traces(cb: impl AsyncFn(&[u8])) -> Result<(), Error> {
+    let mut frags: *mut nrfxlib_sys::nrf_modem_trace_data = core::ptr::null_mut();
+    let mut nfrags = 0;
+
+    let res = unsafe {
+        nrfxlib_sys::nrf_modem_trace_get(
+            &mut frags,
+            &mut nfrags,
+            nrfxlib_sys::NRF_MODEM_OS_NO_WAIT as i32,
+        )
+    };
+
+    if res != 0 {
+        return Err(Error::NrfError(res as isize));
+    }
+
+    // SAFETY: if nrf_modem_trace_get returns 0, frags is a valid pointer to the start of an array of size nfrags.
+    let frags = unsafe { core::slice::from_raw_parts(frags, nfrags) };
+    for nrfxlib_sys::nrf_modem_trace_data { data, len } in frags {
+        let data = unsafe { core::slice::from_raw_parts(*data as *mut u8, *len) };
+        cb(data).await;
+        unsafe {
+            nrfxlib_sys::nrf_modem_trace_processed(*len);
+        }
+    }
+
+    Ok(())
+}
+
 /// The memory layout used by the modem library.
 ///
 /// The full range needs to be in the lower 128k of ram.
@@ -230,8 +275,11 @@ impl Default for MemoryLayout {
             base_address: 0x2001_0000,
             tx_area_size: 0x2000,
             rx_area_size: 0x2000,
-            // Trace is not implemented yet
-            trace_area_size: 0,
+            trace_area_size: if cfg!(feature = "modem-trace") {
+                0x2000
+            } else {
+                0
+            },
         }
     }
 }
