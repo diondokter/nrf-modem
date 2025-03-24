@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Improve handling of XSYSTEMMODE command
+- *Breaking:* Updated to nrfxlib-sys 2.9.1
 
 ## 0.6.1 (2024-12-27)
 

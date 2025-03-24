@@ -13,7 +13,7 @@ keywords = ["nRF91", "LTE", "GPS", "NB-IoT", "embedded"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nrfxlib-sys = "=2.7.1"
+nrfxlib-sys = "=2.9.1"
 
 futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
 num_enum = { version = "0.7.0", default-features = false }
