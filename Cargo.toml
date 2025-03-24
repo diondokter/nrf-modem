@@ -30,11 +30,15 @@ embassy-time = { version = "0.3.0", optional = true }
 grounded = "0.2.0"
 embedded-io-async = "0.6.1"
 
+[build-dependencies]
+cc = { version = "1.2", optional = true }
+
 [features]
 default = []
 defmt = ["dep:defmt", "at-commands/defmt"]
 dns-async = ["dep:embassy-time"]
 modem-trace = []
+modem-log = ["nrfxlib-sys/log", "dep:cc"]
 
 nrf9160 = ["nrfxlib-sys/nrf9160", "dep:nrf9160-pac"]
 nrf9151 = ["nrf9120"]
