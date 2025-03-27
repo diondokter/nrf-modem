@@ -199,8 +199,8 @@ pub async fn init_with_custom_layout(
     }
 
     let mut buffer = [0; 64];
-    mode.create_at_command(&mut buffer)?;
-    at::send_at_bytes::<0>(&buffer).await?;
+    let command = mode.create_at_command(&mut buffer)?;
+    at::send_at_bytes::<0>(&command).await?;
 
     mode.setup_psm().await?;
 

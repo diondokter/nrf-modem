@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Improve handling of XSYSTEMMODE command
+
 ## 0.6.1 (2024-12-27)
 
 - Made some code more open to different bindgen generation that apparently can happen
