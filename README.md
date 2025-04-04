@@ -1,6 +1,6 @@
 # nRF-Modem
 
-[![crates.io](https://img.shields.io/crates/v/nrf-modem.svg)](https://crates.io/crates/nrf-modem) [![Documentation](https://docs.rs/nrf-modem/badge.svg)](https://docs.rs/nrf-modem)
+[![crates.io](https://img.shields.io/crates/v/nrf-modem.svg)](https://crates.io/crates/nrf-modem) [![Documentation](https://docs.rs/nrf-modem/badge.svg)](https://docs.rs/nrf-modem) ![maintenance-status](https://img.shields.io/badge/maintenance-passively--maintained-yellowgreen.svg)
 
 This is a library that provides a high-level async API for the modem on the Nordic nRF91* series chips (System-in-Packages). Supported chips are the following:
 
