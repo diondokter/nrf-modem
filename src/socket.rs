@@ -696,8 +696,8 @@ pub enum SocketProtocol {
 #[derive(Debug)]
 pub enum SocketOption<'a> {
     TlsHostName(&'a str),
-    TlsPeerVerify(nrfxlib_sys::nrf_sec_peer_verify_t),
-    TlsSessionCache(nrfxlib_sys::nrf_sec_session_cache_t),
+    TlsPeerVerify(i32),
+    TlsSessionCache(i32),
     TlsTagList(&'a [nrfxlib_sys::nrf_sec_tag_t]),
     TlsCipherSuiteList(&'a [i32]),
 }
@@ -741,7 +741,7 @@ pub enum PeerVerification {
 }
 
 impl PeerVerification {
-    pub fn as_integer(self) -> u32 {
+    pub fn as_integer(self) -> i32 {
         match self {
             PeerVerification::Enabled => 2,
             PeerVerification::Optional => 1,
