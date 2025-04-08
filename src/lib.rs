@@ -5,7 +5,7 @@
 use crate::error::ErrorSource;
 use core::{
     cell::RefCell,
-    ops::{AsyncFn, Range},
+    ops::Range,
     sync::atomic::{AtomicBool, Ordering},
 };
 use critical_section::Mutex;

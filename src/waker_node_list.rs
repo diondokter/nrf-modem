@@ -35,7 +35,7 @@ impl<T: ?Sized> WakerNodeList<T> {
         }
 
         let mut other = match self.next_node {
-            Some(other) if other != node => other,
+            Some(other) if !core::ptr::eq(other, node) => other,
             Some(_) => {
                 // Already in the list
                 return;
@@ -49,7 +49,7 @@ impl<T: ?Sized> WakerNodeList<T> {
         // Find the last one in the chain of the others
         loop {
             match (*other).next_node {
-                Some(next_node) if next_node != node => other = next_node,
+                Some(next_node) if !core::ptr::eq(next_node, node) => other = next_node,
                 Some(_) => {
                     // Already in the list
                     return;

@@ -10,8 +10,6 @@ static WAKER_NODE_LIST: Mutex<RefCell<WakerNodeList<dyn NotificationBuffer>>> =
     Mutex::new(RefCell::new(WakerNodeList::new()));
 
 pub(crate) unsafe extern "C" fn at_notification_handler(notif: *const core::ffi::c_char) {
-    let notif = notif as *const u8;
-
     #[cfg(feature = "defmt")]
     defmt::trace!(
         "AT notification <- {}",

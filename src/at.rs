@@ -32,8 +32,6 @@ static AT_DATA_WAKER: AtomicWaker = AtomicWaker::new();
 /// The callback that will be called by nrfxlib when the at command has a response.
 /// The `resp` is a null-terminated string.
 unsafe extern "C" fn at_callback(resp: *const core::ffi::c_char) {
-    let resp = resp as *const u8;
-
     #[cfg(feature = "defmt")]
     defmt::trace!(
         "AT <- {}",
