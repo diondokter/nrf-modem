@@ -662,11 +662,20 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_unlock(
 ///
 /// **Parameters**:
 /// - level – Log level
-/// - fmt – Format string
+/// - msg - Message
 /// - ... – Varargs
 #[no_mangle]
-pub extern "C" fn nrf_modem_os_log(_level: core::ffi::c_int, _fmt: *const core::ffi::c_char) {
-    // TODO FIXME
+pub unsafe extern "C" fn nrf_modem_os_log_wrapped(
+    _level: core::ffi::c_int,
+    _msg: *const core::ffi::c_char,
+) {
+    #[cfg(all(feature = "defmt", feature = "modem-log"))]
+    {
+        let msg = core::ffi::CStr::from_ptr(_msg);
+        if let Ok(msg) = msg.to_str() {
+            defmt::trace!("Modem log <{}>: {}", _level, msg);
+        }
+    }
 }
 
 /// Logging procedure for dumping hex representation of object.

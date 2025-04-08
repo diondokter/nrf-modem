@@ -2,7 +2,7 @@
 name = "nrf-modem"
 version = "0.6.1"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 description = "Async modem api for the nRF91xx"
 homepage = "https://github.com/diondokter/nrf-modem"
@@ -13,7 +13,7 @@ keywords = ["nRF91", "LTE", "GPS", "NB-IoT", "embedded"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nrfxlib-sys = "=2.7.1"
+nrfxlib-sys = "=2.9.1"
 
 futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
 num_enum = { version = "0.7.0", default-features = false }
@@ -30,10 +30,15 @@ embassy-time = { version = "0.3.0", optional = true }
 grounded = "0.2.0"
 embedded-io-async = "0.6.1"
 
+[build-dependencies]
+cc = { version = "1.2", optional = true }
+
 [features]
 default = []
 defmt = ["dep:defmt", "at-commands/defmt"]
 dns-async = ["dep:embassy-time"]
+modem-trace = []
+modem-log = ["nrfxlib-sys/log", "dep:cc"]
 
 nrf9160 = ["nrfxlib-sys/nrf9160", "dep:nrf9160-pac"]
 nrf9151 = ["nrf9120"]
