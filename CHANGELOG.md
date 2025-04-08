@@ -2,10 +2,15 @@
 
 ## Unreleased
 
-- Improve handling of XSYSTEMMODE command
+## 0.7.0 (2025-04-08)
+
 - *Breaking:* Updated to nrfxlib-sys 2.9.1
+- *Breaking:* Move to embassy-time 0.4 for async DNS
+- *Breaking:* TLS session tickets are now exposed
+- Improve handling of XSYSTEMMODE command
 - Add helper to get tracing data out of the nrfxlib modem driver. Feature: `modem-trace`
 - Add logging output for the nrfxlib modem driver. Feature: `modem-log`
+- Move to defmt 1.0
 
 ## 0.6.1 (2024-12-27)
 
