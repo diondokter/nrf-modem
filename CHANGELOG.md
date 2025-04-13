@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.7.1 (2025-04-13)
+
+- Updated to nrfxlib-sys 2.9.2 which should make the docs compile again
+
 ## 0.7.0 (2025-04-08)
 
 - *Breaking:* Updated to nrfxlib-sys 2.9.1

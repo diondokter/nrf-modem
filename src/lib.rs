@@ -255,7 +255,7 @@ pub async fn fetch_traces(cb: impl AsyncFn(&[u8])) -> Result<(), Error> {
 /// The memory layout used by the modem library.
 ///
 /// The full range needs to be in the lower 128k of ram.
-/// This also contains the fixed [nrfxlib_sys::NRF_MODEM_SHMEM_CTRL_SIZE].
+/// This also contains the fixed [nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE].
 ///
 /// Nordic guide: <https://developer.nordicsemi.com/nRF_Connect_SDK/doc/2.4.1/nrfxlib/nrf_modem/doc/architecture.html#shared-memory-configuration>
 pub struct MemoryLayout {
