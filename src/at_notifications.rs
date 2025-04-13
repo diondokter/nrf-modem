@@ -21,7 +21,7 @@ pub(crate) unsafe extern "C" fn at_notification_handler(notif: *const core::ffi:
     critical_section::with(|cs| {
         WAKER_NODE_LIST
             .borrow_ref_mut(cs)
-            .wake_all(|c| c.write(notif))
+            .wake_all(|c| c.write(notif.cast()))
     });
 }
 

@@ -50,7 +50,7 @@ unsafe extern "C" fn at_callback(resp: *const core::ffi::c_char) {
         // Copy the contents
         let mut index = 0;
         while index < *size && *resp.add(index) != 0 {
-            *ptr.get_mut().add(index) = *resp.add(index);
+            *ptr.get_mut().add(index) = *resp.add(index) as _;
             index += 1;
         }
 
