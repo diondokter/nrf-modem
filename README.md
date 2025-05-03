@@ -86,7 +86,6 @@ MEMORY
 For non-secure mode with TFM (Trusted Firmware-M):
 
 ```ld
-MEMORY
 MEMORY {
     /* Trusted Firmware-M (TF-M) is flashed at the start */
     FLASH : ORIGIN = 0x00008000, LENGTH = 992K
