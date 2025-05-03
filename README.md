@@ -72,6 +72,8 @@ But it's easy to miss something, so this is a 'best effort' guarantee only.
 
 The model library from Nordic needs some memory for its state and buffers. You need to reserve some memory in your memory.x file for the modem:
 
+For secure mode:
+
 ```ld
 MEMORY
 {
@@ -81,12 +83,25 @@ MEMORY
 }
 ```
 
+For non-secure mode with TFM (Trusted Firmware-M):
+
+```ld
+MEMORY
+MEMORY {
+    /* Trusted Firmware-M (TF-M) is flashed at the start */
+    FLASH : ORIGIN = 0x00008000, LENGTH = 992K
+    RAM   : ORIGIN = 0x2000C568, LENGTH = 206K
+}
+```
+
+Note: When running in non-secure mode with TFM, you must flash TFM firmware to the device before your application. TFM configures the secure and non-secure execution environments and then loads the non-secure application. The memory layout ensures that TFM is placed in the secure region (0x00000000 - 0x00008000) while your application starts at 0x00008000. See [Embassy nRF9151 non-secure example](https://github.com/embassy-rs/embassy/blob/main/examples/nrf9151/ns) for more details.
+
 ### Secure and nonsecure operation
 
 Warning: The underlying C library, `libmodem`, assumes and 'officially' requires to be run in the non-secure mode of the chip.
 So that's the only official support this wrapper can deliver too.
 
-The library *can* be used in secure contexts, though. Some additional initialization is necessary for the secure context because the underlying libmodem C library by Nordic expects access to nonsecure memory and resources. If you do not use the memory layout defined above, you need to adapt the addresses below. 
+The library *can* be used in secure contexts, though. Some additional initialization is necessary for the secure context because the underlying libmodem C library by Nordic expects access to nonsecure memory and resources. If you do not use the memory layout defined above, you need to adapt the addresses below.
 
 For running in the secure context on some chips and version and at your own risk and peril:
 ```rust,ignore
