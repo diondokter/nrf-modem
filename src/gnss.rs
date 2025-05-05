@@ -86,11 +86,12 @@ impl Gnss {
         #[cfg(feature = "defmt")]
         defmt::debug!("Starting gnss");
 
+        let gnss_stream = GnssStream::new(true, self);
         unsafe {
             nrfxlib_sys::nrf_modem_gnss_start();
         }
 
-        Ok(GnssStream::new(true, self))
+        Ok(gnss_stream)
     }
 
     pub fn start_continuous_fix(mut self, config: GnssConfig) -> Result<GnssStream, Error> {
@@ -111,11 +112,12 @@ impl Gnss {
         #[cfg(feature = "defmt")]
         defmt::debug!("Starting gnss");
 
+        let gnss_stream = GnssStream::new(false, self);
         unsafe {
             nrfxlib_sys::nrf_modem_gnss_start();
         }
 
-        Ok(GnssStream::new(false, self))
+        Ok(gnss_stream)
     }
 
     pub fn start_periodic_fix(
@@ -140,11 +142,12 @@ impl Gnss {
         #[cfg(feature = "defmt")]
         defmt::debug!("Starting gnss");
 
+        let gnss_stream = GnssStream::new(false, self);
         unsafe {
             nrfxlib_sys::nrf_modem_gnss_start();
         }
 
-        Ok(GnssStream::new(false, self))
+        Ok(gnss_stream)
     }
 
     fn apply_config(&mut self, config: GnssConfig) -> Result<(), Error> {
