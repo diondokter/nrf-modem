@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.7.2 (2025-05-25)
+
 - Fixed bug that clears GNSS_NOTICED_EVENTS after callback
 
 ## 0.7.1 (2025-04-13)
