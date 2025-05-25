@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed bug that clears GNSS_NOTICED_EVENTS after callback
+
 ## 0.7.1 (2025-04-13)
 
 - Updated to nrfxlib-sys 2.9.2 which should make the docs compile again
