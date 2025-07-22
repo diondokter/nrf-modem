@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added os-irq feature, adding compatibility with interrupt executors.
+
 ## 0.7.2 (2025-05-25)
 
 - Fixed bug that clears GNSS_NOTICED_EVENTS after callback

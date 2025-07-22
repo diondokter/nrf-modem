@@ -11,6 +11,8 @@
 #![allow(clippy::missing_safety_doc)]
 
 use core::mem::MaybeUninit;
+#[cfg(feature = "os-irq")]
+use core::sync::atomic::AtomicU8;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 #[cfg(feature = "nrf9160")]
@@ -24,6 +26,9 @@ const IPC_CONF_NUM: usize = 8;
 
 // Normally a notify should wake all threads. We don't have threads, so a single bool should be enough
 static NOTIFY_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "os-irq")]
+pub(crate) static OS_IRQ: AtomicU8 = AtomicU8::new(0);
 
 /// Used by `libmodem` to configure the IPC peripheral. See `nrfx_ipc_config_t`
 /// in `nrfx/drivers/include/nrfx_ipc.h`.
@@ -522,7 +527,20 @@ struct Semaphore {
 /// Check if executing in interrupt context.
 #[no_mangle]
 pub extern "C" fn nrf_modem_os_is_in_isr() -> bool {
-    cortex_m::peripheral::SCB::vect_active() != cortex_m::peripheral::scb::VectActive::ThreadMode
+    #[cfg(feature = "os-irq")]
+    {
+        let os_irq = OS_IRQ.load(Ordering::Relaxed);
+        match cortex_m::peripheral::SCB::vect_active() {
+            cortex_m::peripheral::scb::VectActive::Interrupt { irqn } => irqn != os_irq,
+            _ => true,
+        }
+    }
+
+    #[cfg(not(feature = "os-irq"))]
+    {
+        cortex_m::peripheral::SCB::vect_active()
+            != cortex_m::peripheral::scb::VectActive::ThreadMode
+    }
 }
 
 // A basic mutex lock implementation for the os mutex functions below
