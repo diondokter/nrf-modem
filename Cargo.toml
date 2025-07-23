@@ -45,5 +45,10 @@ nrf9151 = ["nrf9120"]
 nrf9161 = ["nrf9120"]
 nrf9120 = ["nrfxlib-sys/nrf9120", "dep:nrf9120-pac"]
 
+# Enable this feature when you're using an interrupt executor. 
+# You will need to give the interrupt number when initializing the modem so it can be ignored.
+# The executor interrupt priority must be higher than the IPC priority.
+os-irq = []
+
 [package.metadata.docs.rs]
 features = ["nrf9160"]

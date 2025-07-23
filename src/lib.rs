@@ -80,18 +80,34 @@ pub(crate) static MODEM_RUNTIME_STATE: RuntimeState = RuntimeState::new();
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Start the NRF Modem library
-pub async fn init(mode: SystemMode) -> Result<(), Error> {
-    init_with_custom_layout(mode, Default::default()).await
+///
+/// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
+/// The priority of this interrupt should be superior to the modem's IPC interrupt.
+pub async fn init(mode: SystemMode, #[cfg(feature = "os-irq")] os_irq: u8) -> Result<(), Error> {
+    init_with_custom_layout(
+        mode,
+        Default::default(),
+        #[cfg(feature = "os-irq")]
+        os_irq,
+    )
+    .await
 }
 
 /// Start the NRF Modem library with a manually specified memory layout
+///
+/// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
+/// The priority of this interrupt should be superior to the modem's IPC interrupt.
 pub async fn init_with_custom_layout(
     mode: SystemMode,
     memory_layout: MemoryLayout,
+    #[cfg(feature = "os-irq")] os_irq: u8,
 ) -> Result<(), Error> {
     if INITIALIZED.fetch_or(true, Ordering::SeqCst) {
         return Err(Error::ModemAlreadyInitialized);
     }
+
+    #[cfg(feature = "os-irq")]
+    ffi::OS_IRQ.store(os_irq, Ordering::Relaxed);
 
     const SHARED_MEMORY_RANGE: Range<u32> = 0x2000_0000..0x2002_0000;
 
