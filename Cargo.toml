@@ -47,7 +47,13 @@ nrf9120 = ["nrfxlib-sys/nrf9120", "dep:nrf9120-pac"]
 
 # Enable this feature when you're using an interrupt executor. 
 # You will need to give the interrupt number when initializing the modem so it can be ignored.
-# The executor interrupt priority must be higher than the IPC priority.
+# The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
+#
+# From then on, you should call the modem functions from the interrupt executor you've chosen.
+# This is unless you're sure the underlying C code is threadsafe.
+#
+# Known threadsafe apis:
+# - AT commands
 os-irq = []
 
 [package.metadata.docs.rs]
