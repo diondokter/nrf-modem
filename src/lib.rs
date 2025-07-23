@@ -82,7 +82,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// Start the NRF Modem library
 ///
 /// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
-/// The priority of this interrupt should be superior to the modem's IPC interrupt.
+/// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
 pub async fn init(mode: SystemMode, #[cfg(feature = "os-irq")] os_irq: u8) -> Result<(), Error> {
     init_with_custom_layout(
         mode,
@@ -96,7 +96,7 @@ pub async fn init(mode: SystemMode, #[cfg(feature = "os-irq")] os_irq: u8) -> Re
 /// Start the NRF Modem library with a manually specified memory layout
 ///
 /// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
-/// The priority of this interrupt should be superior to the modem's IPC interrupt.
+/// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
 pub async fn init_with_custom_layout(
     mode: SystemMode,
     memory_layout: MemoryLayout,
