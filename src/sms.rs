@@ -179,7 +179,7 @@ impl<'a> Sms<'a> {
             .map_err(|_| Error::BufferTooSmall(None))?;
         // Write the GSM 7 bit packaged message as hex string
         for c in &encoded_message {
-            write!(&mut at_cmgs, "{:02X}", c).map_err(|_| Error::BufferTooSmall(None))?;
+            write!(&mut at_cmgs, "{c:02X}").map_err(|_| Error::BufferTooSmall(None))?;
         }
         // End character
         write!(&mut at_cmgs, "\x1A").map_err(|_| Error::BufferTooSmall(None))?;
