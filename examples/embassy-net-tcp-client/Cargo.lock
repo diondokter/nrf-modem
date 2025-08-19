@@ -22,6 +22,9 @@ name = "at-commands"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d535a7e70f2244f8e1fa6bd34c6ad54d873b92797917cc6df7e88d76b64249ba"
+dependencies = [
+ "defmt 0.3.100",
+]
 
 [[package]]
 name = "autocfg"
@@ -276,6 +279,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
+name = "embass-net-tcp-client-example"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "defmt 1.0.1",
+ "defmt-rtt",
+ "embassy-executor",
+ "embassy-net",
+ "embassy-nrf",
+ "embassy-time",
+ "embedded-io",
+ "embedded-io-async",
+ "heapless",
+ "nrf-modem",
+ "panic-probe",
+ "static_cell",
+ "tinyrlibc",
+]
+
+[[package]]
 name = "embassy-embedded-hal"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -406,27 +430,6 @@ dependencies = [
  "nrf-pac",
  "rand_core 0.6.4",
  "rand_core 0.9.3",
-]
-
-[[package]]
-name = "embassy-nrf9160-examples"
-version = "0.1.0"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "defmt 1.0.1",
- "defmt-rtt",
- "embassy-executor",
- "embassy-net",
- "embassy-nrf",
- "embassy-time",
- "embedded-io",
- "embedded-io-async",
- "heapless",
- "nrf-modem",
- "panic-probe",
- "static_cell",
- "tinyrlibc",
 ]
 
 [[package]]
@@ -837,6 +840,7 @@ dependencies = [
  "at-commands",
  "cortex-m",
  "critical-section",
+ "defmt 1.0.1",
  "embassy-futures",
  "embassy-net-driver-channel",
  "embassy-sync 0.6.2",
@@ -846,7 +850,7 @@ dependencies = [
  "grounded",
  "heapless",
  "linked_list_allocator",
- "nrf9160-pac",
+ "nrf9120-pac",
  "nrfxlib-sys",
  "num_enum",
 ]
@@ -862,10 +866,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "nrf9160-pac"
+name = "nrf9120-pac"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7344d74afb5684e00c48d175cad9619f36d629cfb0687d33b4d1bb86fba688f4"
+checksum = "6c012f18dc278aa33741722d374bc84e3d2d7694e29745f0bb83e56b2d6faf9b"
 dependencies = [
  "cortex-m",
  "vcell",
