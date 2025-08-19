@@ -274,4 +274,4 @@ If you're facing problems with this library, you have the following tools for de
 
 The `embassy-net` feature enables a wrapper to be able to use the modem via embassy-net.
 
-An usage example is avaialble at [nponsard/nrf-modem-embassy-net-example](https://github.com/nponsard/nrf-modem-embassy-net-example).
+An usage example is avaialble in `examples/embassy-net-tcp-client`.
