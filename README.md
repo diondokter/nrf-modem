@@ -269,3 +269,9 @@ Before this can run, you need to store the required certificate in a security ta
 If you're facing problems with this library, you have the following tools for debugging:
 - Enable the features `modem-log` and `defmt`: This will enable logging for Nordic's nrfxlib modem driver.
 - Enable the feature `modem-trace` and call the function `nrf_modem::fetch_trace()` regularly. This function is called with an async closure handing over chunks of tracing data. Write this data to a UART and use Nordic's nRF Connect tool to collect and interprete the tracing data.
+
+## Embassy-net
+
+The `embassy-net` feature enables a wrapper to be able to use the modem via embassy-net.
+
+An usage example is avaialble at [nponsard/nrf-modem-embassy-net-example](https://github.com/nponsard/nrf-modem-embassy-net-example).
