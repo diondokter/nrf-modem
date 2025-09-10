@@ -3,6 +3,8 @@ use arrayvec::ArrayString;
 use core::net::{IpAddr, SocketAddr};
 use core::str::FromStr;
 
+use super::{AddrType, DnsQuery};
+
 /// Get the IP address that corresponds to the given hostname.
 ///
 /// The modem has an internal cache so this process may be really quick.
@@ -12,7 +14,7 @@ use core::str::FromStr;
 ///
 /// The modem API is capable of setting the dns server, but that's not yet implemented in this wrapper.
 pub async fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
-    get_host_by_name_with_cancellation(hostname, &Default::default()).await
+    resolve_dns(DnsQuery::new(hostname)).await
 }
 
 /// Get the IP address that corresponds to the given hostname.
@@ -27,16 +29,48 @@ pub async fn get_host_by_name_with_cancellation(
     hostname: &str,
     token: &CancellationToken,
 ) -> Result<IpAddr, Error> {
+    resolve_dns_with_cancellation(DnsQuery::new(hostname), token).await
+}
+
+/// Resolve the DNS query.
+///
+/// The modem has an internal cache so this process may be really quick.
+/// If the hostname is not known internally or if it has expired, then it has to be requested from a DNS server.
+///
+/// While this function is async, the actual DNS bit is blocking because the modem sadly has no async API for this.
+///
+/// The modem API is capable of setting the dns server, but that's not yet implemented in this wrapper.
+pub async fn resolve_dns(query: DnsQuery<'_>) -> Result<IpAddr, Error> {
+    resolve_dns_with_cancellation(query, &Default::default()).await
+}
+
+/// Resolve the DNS query.
+///
+/// The modem has an internal cache so this process may be really quick.
+/// If the hostname is not known internally or if it has expired, then it has to be requested from a DNS server.
+///
+/// While this function is async, the actual DNS bit is blocking because the modem sadly has no async API for this.
+///
+/// The modem API is capable of setting the dns server, but that's not yet implemented in this wrapper.
+pub async fn resolve_dns_with_cancellation(
+    query: DnsQuery<'_>,
+    token: &CancellationToken,
+) -> Result<IpAddr, Error> {
     #[cfg(feature = "defmt")]
-    defmt::debug!("Resolving dns hostname for \"{}\"", hostname);
+    defmt::debug!("Resolving dns hostname for \"{}\"", query.hostname());
 
     // If we can parse the hostname as an IP address, then we can save a whole lot of trouble
-    if let Ok(ip) = hostname.parse() {
-        return Ok(ip);
+    if let Ok(ip) = query.hostname().parse() {
+        // Avoid replying with a different address type than requested.
+        if !query.addr_type().addr_matches(ip) {
+            return Err(Error::AddressNotFound);
+        } else {
+            return Ok(ip);
+        }
     }
 
     // The modem only deals with ascii
-    if !hostname.is_ascii() {
+    if !query.hostname().is_ascii() {
         return Err(Error::HostnameNotAscii);
     }
 
@@ -50,7 +84,11 @@ pub async fn get_host_by_name_with_cancellation(
 
     unsafe {
         let hints = nrfxlib_sys::nrf_addrinfo {
-            ai_family: nrfxlib_sys::NRF_AF_UNSPEC as _,
+            ai_family: match query.addr_type() {
+                AddrType::Any => nrfxlib_sys::NRF_AF_UNSPEC as _,
+                AddrType::V4 => nrfxlib_sys::NRF_AF_INET as _,
+                AddrType::V6 => nrfxlib_sys::NRF_AF_INET6 as _,
+            },
             ai_socktype: nrfxlib_sys::NRF_SOCK_STREAM as _,
 
             ai_flags: 0,
@@ -65,7 +103,7 @@ pub async fn get_host_by_name_with_cancellation(
 
         // A hostname should at most be 256 chars, but we have a null char as well, so we add one
         let mut hostname =
-            ArrayString::<257>::from_str(hostname).map_err(|_| Error::HostnameTooLong)?;
+            ArrayString::<257>::from_str(query.hostname()).map_err(|_| Error::HostnameTooLong)?;
         hostname.push('\0');
 
         let err = nrfxlib_sys::nrf_getaddrinfo(

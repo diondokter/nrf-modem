@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Added embassy-net wrapper
+- Allow restricting address type of DNS queries with `resolve_dns()`
 
 ## 0.7.3 (2025-07-23)
 
