@@ -34,6 +34,7 @@ embedded-io-async = "0.6.1"
 embassy-futures = { version = "0.1.1", optional = true }
 embassy-net-driver-channel = { version = "0.3.0", optional = true }
 heapless = { version = "0.8.0", optional = true }
+embedded-nal-async = { version = "0.8.0", optional = true }
 
 [build-dependencies]
 cc = { version = "1.2.18", optional = true }
@@ -58,6 +59,9 @@ embassy-net = [
   "dep:heapless",
 ]
 
+# Enable to add embedded-nal-async trait implementations.
+embedded-nal-async = ["dep:embedded-nal-async"]
+
 # Enable this feature when you're using an interrupt executor. 
 # You will need to give the interrupt number when initializing the modem so it can be ignored.
 # The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
@@ -70,4 +74,4 @@ embassy-net = [
 os-irq = []
 
 [package.metadata.docs.rs]
-features = ["nrf9160"]
+features = ["nrf9160", "embedded-nal-async"]
