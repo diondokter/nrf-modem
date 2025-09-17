@@ -2,9 +2,12 @@
 
 ## Unreleased
 
-- Added embassy-net wrapper
+## 0.8.0 (2025-09-17)
+
+- *Breaking*: Update to embassy-time to 0.5
+- Added embassy-net wrapper (behind feature flag)
 - Allow restricting address type of DNS queries with `resolve_dns()`
-- Add optional supports for the `TcpConnect` and `Dns` traits from `embedded-nal-async`
+- Add optional support for the `TcpConnect` and `Dns` traits from `embedded-nal-async`
 
 ## 0.7.3 (2025-07-23)
 

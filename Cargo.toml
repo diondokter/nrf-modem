@@ -1,6 +1,6 @@
 [package]
 name = "nrf-modem"
-version = "0.7.3"
+version = "0.8.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -25,8 +25,8 @@ nrf9160-pac = { version = "0.12.2", optional = true }
 nrf9120-pac = { version = "0.12.2", optional = true }
 at-commands = "0.5.5"
 critical-section = "1.2.0"
-embassy-sync = "0.6.2"
-embassy-time = { version = "0.4.0", optional = true }
+embassy-sync = "0.7.2"
+embassy-time = { version = "0.5.0", optional = true }
 grounded = "0.2.0"
 embedded-io-async = "0.6.1"
 
@@ -74,4 +74,4 @@ embedded-nal-async = ["dep:embedded-nal-async"]
 os-irq = []
 
 [package.metadata.docs.rs]
-features = ["nrf9160", "embedded-nal-async"]
+features = ["nrf9160", "embedded-nal-async", "embassy-net"]

@@ -23,5 +23,5 @@ jobs:
 
       - run: cargo fmt -- --check
       - run: cargo clippy --features nrf9160 --target thumbv8m.main-none-eabihf -- -D warnings
-      - run: cargo clippy --features nrf9160,dns-async,defmt,modem-trace,modem-log --target thumbv8m.main-none-eabihf -- -D warnings
+      - run: cargo clippy --features nrf9160,dns-async,defmt,modem-trace,modem-log,embassy-net,embedded-nal-async --target thumbv8m.main-none-eabihf -- -D warnings
       - run: cargo clippy --features nrf9151,os-irq --target thumbv8m.main-none-eabihf -- -D warnings

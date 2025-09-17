@@ -55,6 +55,12 @@ impl State {
     }
 }
 
+impl Default for State {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 struct StateInner {
     net_socket: Option<Socket>,
 }
