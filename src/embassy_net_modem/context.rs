@@ -104,7 +104,7 @@ impl<'a> Control<'a> {
     /// NOTE: This will disconnect the modem from any current APN and should not
     /// be called if the configuration has not been changed.
     ///
-    /// After configuring, invoke [`enable()`] to activate the configuration.
+    /// After configuring, invoke [Self::enable] to activate the configuration.
     pub async fn configure(&self, config: &Config<'_>) -> Result<(), Error> {
         let mut cmd: [u8; 256] = [0; 256];
 
