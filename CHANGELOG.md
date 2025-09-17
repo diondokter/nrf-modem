@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Added embassy-net wrapper
+- Allow restricting address type of DNS queries with `resolve_dns()`
+- Add optional supports for the `TcpConnect` and `Dns` traits from `embedded-nal-async`
 
 ## 0.7.3 (2025-07-23)
 

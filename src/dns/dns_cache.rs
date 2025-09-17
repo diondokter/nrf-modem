@@ -1,6 +1,8 @@
 use crate::Error;
 use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use super::{AddrType, DnsQuery};
+
 /// The maximum domain name length
 const MAX_DOMAIN_LEN: usize = 256;
 
@@ -118,7 +120,7 @@ impl DnsCache {
     }
 
     /// Retrieves a cache entry matching the given criteria.
-    pub fn get(&self, key: &str) -> Option<IpAddr> {
+    pub fn get(&self, query: DnsQuery<'_>) -> Option<IpAddr> {
         let mut pos = self.tail;
         let mut key_buffer: [u8; MAX_DOMAIN_LEN] = [0; MAX_DOMAIN_LEN];
         let mut data_buffer: [u8; DATA_BUFFER_SIZE] = [0; DATA_BUFFER_SIZE];
@@ -135,6 +137,21 @@ impl DnsCache {
                 continue;
             }
 
+            // Check if the address type matches
+            match query.addr_type() {
+                AddrType::Any => (),
+                AddrType::V4 => {
+                    if !header.is_ipv4 {
+                        continue;
+                    }
+                }
+                AddrType::V6 => {
+                    if header.is_ipv4 {
+                        continue;
+                    }
+                }
+            }
+
             // Check the key
             let key_start = (pos + CACHE_HEADER_SIZE) % CACHE_BUFFER_SIZE;
             self.read_bytes(
@@ -145,7 +162,7 @@ impl DnsCache {
             )
             .ok()?;
             // Compare keys
-            if &key_buffer[..header.key_length as usize] == key.as_bytes() {
+            if &key_buffer[..header.key_length as usize] == query.hostname().as_bytes() {
                 // Key matches; read the data
                 let data_start = (key_start + header.key_length as usize) % CACHE_BUFFER_SIZE;
                 let result = self.read_bytes(

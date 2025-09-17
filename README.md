@@ -275,3 +275,9 @@ If you're facing problems with this library, you have the following tools for de
 The `embassy-net` feature enables a wrapper to be able to use the modem via embassy-net.
 
 An usage example is avaialble in `examples/embassy-net-tcp-client`.
+
+## embedded-nal-async
+
+The `embedded-nal-async` feature enables a `ModemNal` struct that implements traits from `embedded-nal-async`.
+
+Support is currently limited to DNS and unencrypted TCP.

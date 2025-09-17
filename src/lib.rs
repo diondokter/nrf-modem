@@ -20,6 +20,8 @@ mod dtls_socket;
 #[cfg(feature = "embassy-net")]
 pub mod embassy_net_modem;
 pub(crate) mod embedded_io_macros;
+#[cfg(feature = "embedded-nal-async")]
+pub mod embedded_nal_async;
 mod error;
 pub mod ffi;
 mod gnss;
@@ -39,6 +41,8 @@ pub use at_notifications::AtNotificationStream;
 pub use cancellation::CancellationToken;
 pub use dns::*;
 pub use dtls_socket::*;
+#[cfg(feature = "embedded-nal-async")]
+pub use embedded_nal_async::*;
 pub use error::Error;
 pub use gnss::*;
 pub use lte_link::LteLink;

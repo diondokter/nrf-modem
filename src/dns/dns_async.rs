@@ -4,6 +4,8 @@ use core::{cell::RefCell, convert::TryInto};
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
 use embassy_time::Duration;
 
+use super::{AddrType, DnsQuery};
+
 const DNS_SERVERS: [[u8; 4]; 8] = [
     [8, 8, 8, 8],
     [8, 8, 4, 4],
@@ -23,7 +25,7 @@ static DNS_CACHE: Mutex<ThreadModeRawMutex, RefCell<DnsCache>> =
     Mutex::new(RefCell::new(DnsCache::new()));
 
 #[repr(u16)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[allow(clippy::upper_case_acronyms)]
 enum RecordType {
@@ -119,23 +121,39 @@ impl DNSQuestion<'_> {
 }
 
 pub async fn get_host_by_name(hostname: &str) -> Result<IpAddr, Error> {
-    get_host_by_name_with_cancellation(hostname, &Default::default()).await
+    resolve_dns(DnsQuery::new(hostname)).await
 }
 
 pub async fn get_host_by_name_with_cancellation(
     hostname: &str,
     token: &CancellationToken,
 ) -> Result<IpAddr, Error> {
+    resolve_dns_with_cancellation(DnsQuery::new(hostname), token).await
+}
+
+pub async fn resolve_dns(query: DnsQuery<'_>) -> Result<IpAddr, Error> {
+    resolve_dns_with_cancellation(query, &Default::default()).await
+}
+
+pub async fn resolve_dns_with_cancellation(
+    query: DnsQuery<'_>,
+    token: &CancellationToken,
+) -> Result<IpAddr, Error> {
     #[cfg(feature = "defmt")]
-    defmt::debug!("Resolving dns hostname async for \"{}\"", hostname);
+    defmt::debug!("Resolving dns hostname async for \"{}\"", query.hostname);
 
     // If we can parse the hostname as an IP address, then we can save a whole lot of trouble
-    if let Ok(ip) = hostname.parse() {
-        return Ok(ip);
+    if let Ok(ip) = query.hostname().parse() {
+        // Avoid replying with a different address type than requested.
+        if !query.addr_type().addr_matches(ip) {
+            return Err(Error::AddressNotFound);
+        } else {
+            return Ok(ip);
+        }
     }
 
     // The modem only deals with ascii
-    if !hostname.is_ascii() {
+    if !query.hostname().is_ascii() {
         return Err(Error::HostnameNotAscii);
     }
 
@@ -144,7 +162,7 @@ pub async fn get_host_by_name_with_cancellation(
     // Try to get the records from the cache
     let result = {
         let cache = DNS_CACHE.lock().await;
-        let result = cache.borrow().get(hostname);
+        let result = cache.borrow().get(query);
         result
     };
     if let Some(cached_record) = result {
@@ -175,9 +193,29 @@ pub async fn get_host_by_name_with_cancellation(
     let mut addr = None::<IpAddr>;
 
     for record_type in [RecordType::A, RecordType::AAAA] {
+        // Skip record types that don't match the requested address type.
+        match query.addr_type() {
+            AddrType::Any => (),
+            AddrType::V4 => {
+                if record_type != RecordType::A {
+                    continue;
+                }
+            }
+            AddrType::V6 => {
+                if record_type != RecordType::AAAA {
+                    continue;
+                }
+            }
+        }
+
         // Build the DNS query
         let transaction_id = embassy_time::Instant::now().as_micros() as u16;
-        let query_size = build_dns_query(&mut query_buffer, hostname, record_type, transaction_id)?;
+        let query_size = build_dns_query(
+            &mut query_buffer,
+            query.hostname(),
+            record_type,
+            transaction_id,
+        )?;
 
         #[cfg(feature = "defmt")]
         defmt::trace!("DNS query: {}", &query_buffer[..query_size]);
@@ -199,7 +237,7 @@ pub async fn get_host_by_name_with_cancellation(
                         "DNS query type {:?} succeeded for host: {} with hostname {}",
                         record_type,
                         dns_server,
-                        hostname
+                        query.hostname(),
                     );
                     addr = Some(result);
                     break;

@@ -57,6 +57,8 @@ pub enum Error {
     DnsSocketError,
     #[cfg(feature = "dns-async")]
     DnsParseFailed,
+    #[cfg(feature = "embedded-nal-async")]
+    ReverseDnsLookupNotSupported,
 }
 
 impl embedded_io_async::Error for Error {
@@ -101,6 +103,8 @@ impl embedded_io_async::Error for Error {
             Error::DnsSocketError => embedded_io_async::ErrorKind::Other,
             #[cfg(feature = "dns-async")]
             Error::DnsParseFailed => embedded_io_async::ErrorKind::Other,
+            #[cfg(feature = "embedded-nal-async")]
+            Error::ReverseDnsLookupNotSupported => embedded_io_async::ErrorKind::Unsupported,
         }
     }
 }
