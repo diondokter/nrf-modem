@@ -522,16 +522,15 @@ impl RuntimeState {
         }
 
         if state.lte_link_count == 1 {
-            if state.gps_active || state.uicc_link_count > 0 {
-                ModemDeactivation::OnlyLte
+            if !state.gps_active && state.uicc_link_count == 0 {
+                ModemDeactivation::Everything.act_on_modem().await?;
             } else {
-                ModemDeactivation::Everything
+                ModemDeactivation::OnlyLte.act_on_modem().await?;
+                if state.uicc_link_count == 0 {
+                    ModemDeactivation::OnlyUicc.act_on_modem().await?;
+                }
             }
-        } else {
-            ModemDeactivation::Nothing
         }
-        .act_on_modem()
-        .await?;
 
         state.lte_link_count -= 1;
 
@@ -549,15 +548,15 @@ impl RuntimeState {
         }
 
         if state.lte_link_count == 1 {
-            if state.gps_active || state.uicc_link_count > 0 {
-                ModemDeactivation::OnlyLte
+            if !state.gps_active && state.uicc_link_count == 0 {
+                ModemDeactivation::Everything.act_on_modem_blocking()?;
             } else {
-                ModemDeactivation::Everything
+                ModemDeactivation::OnlyLte.act_on_modem_blocking()?;
+                if state.uicc_link_count == 0 {
+                    ModemDeactivation::OnlyUicc.act_on_modem_blocking()?;
+                }
             }
-        } else {
-            ModemDeactivation::Nothing
         }
-        .act_on_modem_blocking()?;
 
         state.lte_link_count -= 1;
 
@@ -698,8 +697,7 @@ impl ModemDeactivation {
 
                 // Turn off the network side of the modem
                 at::send_at::<0>("AT+CFUN=20").await?;
-                // Turn off the UICC
-                at::send_at::<0>("AT+CFUN=40").await?;
+                // Do not turn of UICC, let the caller do that.
             }
             ModemDeactivation::OnlyUicc => {
                 #[cfg(feature = "defmt")]
@@ -733,8 +731,7 @@ impl ModemDeactivation {
 
                 // Turn off the network side of the modem
                 at::send_at_blocking::<0>("AT+CFUN=20")?;
-                // Turn off the UICC
-                at::send_at_blocking::<0>("AT+CFUN=40")?;
+                // Do not turn of UICC, let the caller do that.
             }
             ModemDeactivation::OnlyUicc => {
                 #[cfg(feature = "defmt")]
