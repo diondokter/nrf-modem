@@ -35,6 +35,7 @@ pub enum Error {
     SmsNumberNotAscii,
     Disconnected,
     TooManyLteLinks,
+    TooManyUiccLinks,
     InternalRuntimeMutexLocked,
     /// The given memory layout falls outside of the acceptable range
     BadMemoryLayout,
@@ -84,6 +85,7 @@ impl embedded_io_async::Error for Error {
             Error::SmsNumberNotAscii => embedded_io_async::ErrorKind::Other,
             Error::Disconnected => embedded_io_async::ErrorKind::ConnectionReset,
             Error::TooManyLteLinks => embedded_io_async::ErrorKind::Other,
+            Error::TooManyUiccLinks => embedded_io_async::ErrorKind::Other,
             Error::InternalRuntimeMutexLocked => embedded_io_async::ErrorKind::Other,
             Error::BadMemoryLayout => embedded_io_async::ErrorKind::Other,
             Error::ModemAlreadyInitialized => embedded_io_async::ErrorKind::Other,
