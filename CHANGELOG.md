@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.9.0 (2025-10-01)
+
+- *Breaking*: Made the `embedded_nal_async` module private that was accidentally left public
+- Added UiccLink to be able to activate the sim card in a controlled way. This allows some AT commands to run without fully turning on the modem
+
 ## 0.8.0 (2025-09-17)
 
 - *Breaking*: Update to embassy-time to 0.5
