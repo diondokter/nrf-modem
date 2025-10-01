@@ -21,7 +21,7 @@ mod dtls_socket;
 pub mod embassy_net_modem;
 pub(crate) mod embedded_io_macros;
 #[cfg(feature = "embedded-nal-async")]
-pub mod embedded_nal_async;
+mod embedded_nal_async;
 mod error;
 pub mod ffi;
 mod gnss;
