@@ -638,7 +638,7 @@ impl Socket {
         let result = unsafe {
             nrfxlib_sys::nrf_setsockopt(
                 self.fd,
-                nrfxlib_sys::NRF_SOL_SECURE.try_into().unwrap(),
+                option.get_level(),
                 option.get_name(),
                 option.get_value(),
                 length,
@@ -722,6 +722,16 @@ pub enum SocketOption<'a> {
     TlsCipherSuiteList(&'a [i32]),
 }
 impl SocketOption<'_> {
+    pub(crate) fn get_level(&self) -> i32 {
+        match self {
+            // NRF_SOL_SECURE level
+            SocketOption::TlsHostName(_)
+            | SocketOption::TlsPeerVerify(_)
+            | SocketOption::TlsSessionCache(_)
+            | SocketOption::TlsTagList(_)
+            | SocketOption::TlsCipherSuiteList(_) => nrfxlib_sys::NRF_SOL_SOCKET as i32,
+        }
+    }
     pub(crate) fn get_name(&self) -> i32 {
         match self {
             SocketOption::TlsHostName(_) => nrfxlib_sys::NRF_SO_SEC_HOSTNAME as i32,
