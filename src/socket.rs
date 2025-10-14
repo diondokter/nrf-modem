@@ -149,7 +149,11 @@ impl SocketDirection {
     }
 }
 
-/// Internal socket implementation
+/// A socket for network communication through the nRF modem.
+///
+/// This struct provides an async interface to the nRF modem's socket functionality,
+/// supporting TCP, UDP, TLS, and DTLS protocols. The socket automatically manages
+/// the LTE link lifetime and provides non-blocking async operations.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Socket {
@@ -247,6 +251,11 @@ impl Socket {
         self.fd
     }
 
+    /// Split the socket into two handles that can be used independently.
+    ///
+    /// This is useful for splitting a socket into separate read and write handles
+    /// that can be used in different async tasks. Each handle maintains its own
+    /// LTE link to keep the connection alive.
     pub async fn split(mut self) -> Result<(SplitSocketHandle, SplitSocketHandle), Error> {
         let index = SplitSocketHandle::get_new_spot();
         self.split = true;
@@ -270,7 +279,7 @@ impl Socket {
 
     /// Connect to the given socket address.
     ///
-    /// This calls the `nrf_connect` function and can be used for tcp streams, udp connections and dtls connections.
+    /// This calls the [nrfxlib_sys::nrf_connect] function and can be used for tcp streams, udp connections and dtls connections.
     pub async fn connect(&self, address: SocketAddr) -> Result<(), Error> {
         unsafe {
             self.connect_with_cancellation(address, &Default::default())
@@ -280,7 +289,7 @@ impl Socket {
 
     /// Connect to the given socket address.
     ///
-    /// This calls the `nrf_connect` function and can be used for tcp streams, udp connections and dtls connections.
+    /// This calls the [nrfxlib_sys::nrf_connect] function and can be used for tcp streams, udp connections and dtls connections.
     ///
     /// ## Safety
     ///
@@ -354,7 +363,7 @@ impl Socket {
 
     /// Bind the socket to a given address.
     ///
-    /// This calls the `nrf_bind` function and can be used for udp sockets
+    /// This calls the [nrfxlib_sys::nrf_bind] function and can be used for UDP sockets.
     pub async fn bind(&self, address: SocketAddr) -> Result<(), Error> {
         unsafe {
             self.bind_with_cancellation(address, &Default::default())
@@ -364,7 +373,7 @@ impl Socket {
 
     /// Bind the socket to a given address.
     ///
-    /// This calls the `nrf_bind` function and can be used for udp sockets
+    /// This calls the [nrfxlib_sys::nrf_bind] function and can be used for UDP sockets.
     ///
     /// ## Safety
     ///
@@ -436,13 +445,19 @@ impl Socket {
         Ok(())
     }
 
-    /// Call the [nrfxlib_sys::nrf_send] in an async fashion
+    /// Write data to the socket.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_send] function and can be used for TCP streams and dTLS connections.
     pub async fn write(&self, buffer: &[u8]) -> Result<usize, Error> {
         self.write_with_cancellation(buffer, &Default::default())
             .await
     }
 
-    /// Call the [nrfxlib_sys::nrf_send] in an async fashion
+    /// Write data to the socket with cancellation support.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_send] function and can be used for TCP streams and dTLS connections.
+    ///
+    /// This operation can be cancelled using the provided [`CancellationToken`].
     pub async fn write_with_cancellation(
         &self,
         buffer: &[u8],
@@ -485,13 +500,19 @@ impl Socket {
         .await
     }
 
-    /// Call the [nrfxlib_sys::nrf_recv] in an async fashion
+    /// Receive data from the socket.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_recv] function and can be used for TCP streams and dTLS connections.
     pub async fn receive(&self, buffer: &mut [u8]) -> Result<usize, Error> {
         self.receive_with_cancellation(buffer, &Default::default())
             .await
     }
 
-    /// Call the [nrfxlib_sys::nrf_recv] in an async fashion
+    /// Receive data from the socket with cancellation support.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_recv] function and can be used for TCP streams and dTLS connections.
+    ///
+    /// This operation can be cancelled using the provided [`CancellationToken`].
     pub async fn receive_with_cancellation(
         &self,
         buffer: &mut [u8],
@@ -536,13 +557,19 @@ impl Socket {
         .await
     }
 
-    /// Call the [nrfxlib_sys::nrf_recvfrom] in an async fashion
+    /// Receive data from the socket along with the sender's address.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_recvfrom] function and can be used for UDP sockets.
     pub async fn receive_from(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), Error> {
         self.receive_from_with_cancellation(buffer, &Default::default())
             .await
     }
 
-    /// Call the [nrfxlib_sys::nrf_recvfrom] in an async fashion
+    /// Receive data from the socket along with the sender's address, with cancellation support.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_recvfrom] function and can be used for UDP sockets.
+    ///
+    /// This operation can be cancelled using the provided [`CancellationToken`].
     pub async fn receive_from_with_cancellation(
         &self,
         buffer: &mut [u8],
@@ -601,13 +628,19 @@ impl Socket {
         .await
     }
 
-    /// Call the [nrfxlib_sys::nrf_sendto] in an async fashion
+    /// Send data to a specific address through the socket.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_sendto] function and can be used for UDP sockets.
     pub async fn send_to(&self, buffer: &[u8], address: SocketAddr) -> Result<usize, Error> {
         self.send_to_with_cancellation(buffer, address, &Default::default())
             .await
     }
 
-    /// Call the [nrfxlib_sys::nrf_sendto] in an async fashion
+    /// Send data to a specific address through the socket with cancellation support.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_sendto] function and can be used for UDP sockets.
+    ///
+    /// This operation can be cancelled using the provided [`CancellationToken`].
     pub async fn send_to_with_cancellation(
         &self,
         buffer: &[u8],
@@ -660,6 +693,13 @@ impl Socket {
         .await
     }
 
+    /// Set a socket option.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_setsockopt] function and provides access to various socket
+    /// configuration options including timeouts, TLS settings, PDN binding, and protocol-specific
+    /// options.
+    ///
+    /// See [`SocketOption`] for available options.
     pub fn set_option<'a>(&'a self, option: SocketOption<'a>) -> Result<(), SocketOptionError> {
         let length = option.get_length();
 
@@ -707,39 +747,74 @@ impl PartialEq for Socket {
 }
 impl Eq for Socket {}
 
+/// Socket address family.
+///
+/// Specifies the address family to use for the socket.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketFamily {
+    /// Unspecified address family.
     Unspecified = nrfxlib_sys::NRF_AF_UNSPEC,
+    /// IPv4 address family.
     Ipv4 = nrfxlib_sys::NRF_AF_INET,
+    /// IPv6 address family.
     Ipv6 = nrfxlib_sys::NRF_AF_INET6,
+    /// Raw packet interface.
     Raw = nrfxlib_sys::NRF_AF_PACKET,
 }
 
+/// Socket type.
+///
+/// Specifies the communication semantics for the socket.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketType {
+    /// Stream socket (TCP).
+    ///
+    /// Provides sequenced, reliable, two-way, connection-based byte streams.
     Stream = nrfxlib_sys::NRF_SOCK_STREAM,
+    /// Datagram socket (UDP).
+    ///
+    /// Provides connectionless, unreliable messages of a fixed maximum length.
     Datagram = nrfxlib_sys::NRF_SOCK_DGRAM,
+    /// Raw socket.
+    ///
+    /// Provides raw network protocol access.
     Raw = nrfxlib_sys::NRF_SOCK_RAW,
 }
 
+/// Socket protocol.
+///
+/// Specifies the protocol to use with the socket.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketProtocol {
+    /// Internet Protocol.
     IP = nrfxlib_sys::NRF_IPPROTO_IP,
+    /// Transmission Control Protocol.
     Tcp = nrfxlib_sys::NRF_IPPROTO_TCP,
+    /// User Datagram Protocol.
     Udp = nrfxlib_sys::NRF_IPPROTO_UDP,
+    /// Internet Protocol Version 6.
     Ipv6 = nrfxlib_sys::NRF_IPPROTO_IPV6,
+    /// Raw IP packets.
     Raw = nrfxlib_sys::NRF_IPPROTO_RAW,
+    /// All protocols.
     All = nrfxlib_sys::NRF_IPPROTO_ALL,
+    /// Transport Layer Security 1.2.
     Tls1v2 = nrfxlib_sys::NRF_SPROTO_TLS1v2,
+    /// Datagram Transport Layer Security 1.2.
     DTls1v2 = nrfxlib_sys::NRF_SPROTO_DTLS1v2,
 }
 
+/// Socket configuration options.
+///
+/// These options can be set using [`Socket::set_option`] to configure various
+/// aspects of socket behavior including timeouts, TLS settings, PDN binding,
+/// and protocol-specific options.
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum SocketOption<'a> {
@@ -956,14 +1031,21 @@ impl SocketOption<'_> {
     }
 }
 
+/// TLS peer verification level.
+///
+/// Controls whether and how the peer's TLS certificate is verified.
 #[derive(Debug, Copy, Clone)]
 pub enum PeerVerification {
+    /// Peer verification is required. The connection will fail if verification fails.
     Enabled,
+    /// Peer verification is optional. The connection proceeds even if verification fails.
     Optional,
+    /// Peer verification is disabled. No verification is performed.
     Disabled,
 }
 
 impl PeerVerification {
+    /// Convert the peer verification level to an integer value for use with socket options.
     pub fn as_integer(self) -> i32 {
         match self {
             PeerVerification::Enabled => 2,
@@ -973,7 +1055,10 @@ impl PeerVerification {
     }
 }
 
-/// These are the allowed cipher suites for the nrf9160 modem as per <https://docs.nordicsemi.com/bundle/nrfxlib-apis-latest/page/group_nrf_socket_tls_cipher_suites.html>
+/// TLS cipher suites supported by the nRF9160 modem.
+///
+/// These are the allowed cipher suites for the nRF9160 modem.
+/// For more information, see the [Nordic documentation](https://docs.nordicsemi.com/bundle/nrfxlib-apis-latest/page/group_nrf_socket_tls_cipher_suites.html).
 #[repr(i32)]
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone)]
@@ -1003,32 +1088,33 @@ pub enum CipherSuite {
         nrfxlib_sys::NRF_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 as i32,
 }
 
+/// Errors that can occur when setting socket options.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketOptionError {
-    // The option could not be set when requested, try again.
+    /// The option could not be set when requested, try again.
     TryAgain,
-    // The socket argument is not a valid file descriptor.
+    /// The socket argument is not a valid file descriptor.
     InvalidFileDescriptor,
-    // The socket option NRF_SO_RAI with value NRF_RAI_NO_DATA cannot be set on a socket that is not connected.
+    /// The socket option NRF_SO_RAI with value NRF_RAI_NO_DATA cannot be set on a socket that is not connected.
     DestinationAddressRequired,
-    // The send and receive timeout values are too big to fit into the timeout fields in the socket structure.
+    /// The send and receive timeout values are too big to fit into the timeout fields in the socket structure.
     TimeoutTooBig,
-    // The specified option is invalid at the specified socket level or the socket has been shut down.
+    /// The specified option is invalid at the specified socket level or the socket has been shut down.
     InvalidOption,
-    // The socket is already connected, and a specified option cannot be set while the socket is connected.
+    /// The socket is already connected, and a specified option cannot be set while the socket is connected.
     AlreadyConnected,
-    // The option is not supported by the protocol.
+    /// The option is not supported by the protocol.
     UnsupportedOption,
-    // The socket argument does not refer to a socket.
+    /// The socket argument does not refer to a socket.
     NotASocket,
-    // There was insufficient memory available for the operation to complete.
+    /// There was insufficient memory available for the operation to complete.
     OutOfMemory,
-    // Insufficient resources are available in the system to complete the call.
+    /// Insufficient resources are available in the system to complete the call.
     OutOfResources,
-    // The option is not supported with the current socket configuration.
+    /// The option is not supported with the current socket configuration.
     OperationNotSupported,
-    // Modem was shut down.
+    /// Modem was shut down.
     ModemShutdown,
 }
 
@@ -1056,12 +1142,26 @@ const ATOMIC_U8_INIT: AtomicU8 = AtomicU8::new(0);
 static ACTIVE_SPLIT_SOCKETS: [AtomicU8; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize] =
     [ATOMIC_U8_INIT; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize];
 
+/// A handle to a split socket.
+///
+/// Created by calling [`Socket::split`]. This allows a socket to be split into
+/// two handles that can be used independently in different async tasks (e.g., one
+/// for reading and one for writing).
+///
+/// Each handle maintains its own LTE link and can be deactivated independently,
+/// though the underlying socket is only closed when the last handle is dropped.
 pub struct SplitSocketHandle {
     inner: Option<Socket>,
     index: usize,
 }
 
 impl SplitSocketHandle {
+    /// Deactivates this socket handle and its LTE link.
+    ///
+    /// This will deactivate the LTE link associated with this handle. If this is the
+    /// last remaining handle to the split socket, the underlying socket will also be closed.
+    ///
+    /// A normal drop will do the same thing, but blocking.
     pub async fn deactivate(mut self) -> Result<(), Error> {
         let mut inner = self.inner.take().unwrap();
 
