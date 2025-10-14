@@ -715,38 +715,179 @@ pub enum SocketProtocol {
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum SocketOption<'a> {
+    // NRF_SOL_SOCKET level options
+    /// Non-zero requests reuse of local addresses in bind (protocol-specific).
+    ReuseAddr(i32),
+    /// Timeout value for socket receive and accept operations.
+    ///
+    /// Minimum supported resolution is 1 millisecond.
+    ReceiveTimeout(nrfxlib_sys::nrf_timeval),
+    /// Timeout value for socket send operation.
+    ///
+    /// Minimum supported resolution is 1 millisecond.
+    SendTimeout(nrfxlib_sys::nrf_timeval),
+    /// Bind this socket to a specific PDN ID.
+    BindToPdn(i32),
+    /// Send data on socket as part of exceptional event.
+    ///
+    /// Requires network support and PDN configuration with AT%EXCEPTIONALDATA.
+    ExceptionalData(i32),
+    /// Keep the socket open when its PDN connection is lost, or the device is set to flight mode.
+    KeepOpen(i32),
+    /// Release Assistance Indication (RAI).
+    ///
+    /// Values: NRF_RAI_NO_DATA, NRF_RAI_LAST, NRF_RAI_ONE_RESP, NRF_RAI_ONGOING, NRF_RAI_WAIT_MORE
+    Rai(i32),
+
+    // Protocol-level options
+    /// Non-zero disables ICMP echo replies on both IPv4 and IPv6.
+    SilenceAll(i32),
+    /// Non-zero enables ICMP echo replies on IPv4.
+    IpEchoReply(i32),
+    /// Non-zero enables ICMP echo replies on IPv6.
+    Ipv6EchoReply(i32),
+    /// Non-zero delays IPv6 address refresh during power saving mode.
+    Ipv6DelayedAddrRefresh(i32),
+    /// Configure TCP server session inactivity timeout (0-135 seconds).
+    TcpServerSessionTimeout(i32),
+
+    // NRF_SOL_SECURE level options
+    /// Set the hostname used for peer verification.
     TlsHostName(&'a str),
+    /// Set the peer verification level.
+    ///
+    /// Values: 0 (disabled), 1 (optional), 2 (required)
     TlsPeerVerify(i32),
+    /// Non-zero enables TLS session caching.
     TlsSessionCache(i32),
+    /// Set/get the security tag associated with a socket.
     TlsTagList(&'a [nrfxlib_sys::nrf_sec_tag_t]),
+    /// Set/get allowed cipher suite list.
     TlsCipherSuiteList(&'a [i32]),
+    /// Set the role for the connection (client or server).
+    ///
+    /// Values: 0 (client), 1 (server)
+    TlsRole(i32),
+    /// Delete TLS session cache (write-only).
+    TlsSessionCachePurge(i32),
+    /// Set the DTLS handshake timeout.
+    ///
+    /// Values: 0 (no timeout), or specific timeout values
+    DtlsHandshakeTimeout(i32),
+    /// Set DTLS Connection ID setting.
+    ///
+    /// Values: 0 (disabled), 1 (supported), 2 (enabled)
+    DtlsCid(i32),
+    /// Save DTLS connection (write-only).
+    DtlsConnSave(i32),
+    /// Load DTLS connection (write-only).
+    DtlsConnLoad(i32),
 }
 impl SocketOption<'_> {
     pub(crate) fn get_level(&self) -> i32 {
         match self {
+            // NRF_SOL_SOCKET level
+            SocketOption::ReuseAddr(_)
+            | SocketOption::ReceiveTimeout(_)
+            | SocketOption::SendTimeout(_)
+            | SocketOption::BindToPdn(_)
+            | SocketOption::ExceptionalData(_)
+            | SocketOption::KeepOpen(_)
+            | SocketOption::Rai(_) => nrfxlib_sys::NRF_SOL_SOCKET as i32,
+
+            // Protocol levels
+            SocketOption::SilenceAll(_) => nrfxlib_sys::NRF_IPPROTO_ALL as i32,
+            SocketOption::IpEchoReply(_) => nrfxlib_sys::NRF_IPPROTO_IP as i32,
+            SocketOption::Ipv6EchoReply(_) | SocketOption::Ipv6DelayedAddrRefresh(_) => {
+                nrfxlib_sys::NRF_IPPROTO_IPV6 as i32
+            }
+            SocketOption::TcpServerSessionTimeout(_) => nrfxlib_sys::NRF_IPPROTO_TCP as i32,
+
             // NRF_SOL_SECURE level
             SocketOption::TlsHostName(_)
             | SocketOption::TlsPeerVerify(_)
             | SocketOption::TlsSessionCache(_)
             | SocketOption::TlsTagList(_)
-            | SocketOption::TlsCipherSuiteList(_) => nrfxlib_sys::NRF_SOL_SOCKET as i32,
+            | SocketOption::TlsCipherSuiteList(_)
+            | SocketOption::TlsRole(_)
+            | SocketOption::TlsSessionCachePurge(_)
+            | SocketOption::DtlsHandshakeTimeout(_)
+            | SocketOption::DtlsCid(_)
+            | SocketOption::DtlsConnSave(_)
+            | SocketOption::DtlsConnLoad(_) => nrfxlib_sys::NRF_SOL_SECURE as i32,
         }
     }
+
     pub(crate) fn get_name(&self) -> i32 {
         match self {
+            // NRF_SOL_SOCKET level
+            SocketOption::ReuseAddr(_) => nrfxlib_sys::NRF_SO_REUSEADDR as i32,
+            SocketOption::ReceiveTimeout(_) => nrfxlib_sys::NRF_SO_RCVTIMEO as i32,
+            SocketOption::SendTimeout(_) => nrfxlib_sys::NRF_SO_SNDTIMEO as i32,
+            SocketOption::BindToPdn(_) => nrfxlib_sys::NRF_SO_BINDTOPDN as i32,
+            SocketOption::ExceptionalData(_) => nrfxlib_sys::NRF_SO_EXCEPTIONAL_DATA as i32,
+            SocketOption::KeepOpen(_) => nrfxlib_sys::NRF_SO_KEEPOPEN as i32,
+            SocketOption::Rai(_) => nrfxlib_sys::NRF_SO_RAI as i32,
+
+            // Protocol-level options
+            SocketOption::SilenceAll(_) => nrfxlib_sys::NRF_SO_SILENCE_ALL as i32,
+            SocketOption::IpEchoReply(_) => nrfxlib_sys::NRF_SO_IP_ECHO_REPLY as i32,
+            SocketOption::Ipv6EchoReply(_) => nrfxlib_sys::NRF_SO_IPV6_ECHO_REPLY as i32,
+            SocketOption::Ipv6DelayedAddrRefresh(_) => {
+                nrfxlib_sys::NRF_SO_IPV6_DELAYED_ADDR_REFRESH as i32
+            }
+            SocketOption::TcpServerSessionTimeout(_) => {
+                nrfxlib_sys::NRF_SO_TCP_SRV_SESSTIMEO as i32
+            }
+
+            // NRF_SOL_SECURE level
             SocketOption::TlsHostName(_) => nrfxlib_sys::NRF_SO_SEC_HOSTNAME as i32,
             SocketOption::TlsPeerVerify(_) => nrfxlib_sys::NRF_SO_SEC_PEER_VERIFY as i32,
             SocketOption::TlsSessionCache(_) => nrfxlib_sys::NRF_SO_SEC_SESSION_CACHE as i32,
             SocketOption::TlsTagList(_) => nrfxlib_sys::NRF_SO_SEC_TAG_LIST as i32,
             SocketOption::TlsCipherSuiteList(_) => nrfxlib_sys::NRF_SO_SEC_CIPHERSUITE_LIST as i32,
+            SocketOption::TlsRole(_) => nrfxlib_sys::NRF_SO_SEC_ROLE as i32,
+            SocketOption::TlsSessionCachePurge(_) => {
+                nrfxlib_sys::NRF_SO_SEC_SESSION_CACHE_PURGE as i32
+            }
+            SocketOption::DtlsHandshakeTimeout(_) => {
+                nrfxlib_sys::NRF_SO_SEC_DTLS_HANDSHAKE_TIMEO as i32
+            }
+            SocketOption::DtlsCid(_) => nrfxlib_sys::NRF_SO_SEC_DTLS_CID as i32,
+            SocketOption::DtlsConnSave(_) => nrfxlib_sys::NRF_SO_SEC_DTLS_CONN_SAVE as i32,
+            SocketOption::DtlsConnLoad(_) => nrfxlib_sys::NRF_SO_SEC_DTLS_CONN_LOAD as i32,
         }
     }
 
     pub(crate) fn get_value(&self) -> *const core::ffi::c_void {
         match self {
+            // NRF_SOL_SOCKET level
+            SocketOption::ReuseAddr(x)
+            | SocketOption::BindToPdn(x)
+            | SocketOption::ExceptionalData(x)
+            | SocketOption::KeepOpen(x)
+            | SocketOption::Rai(x) => x as *const _ as *const core::ffi::c_void,
+            SocketOption::ReceiveTimeout(x) | SocketOption::SendTimeout(x) => {
+                x as *const _ as *const core::ffi::c_void
+            }
+
+            // Protocol-level options
+            SocketOption::SilenceAll(x)
+            | SocketOption::IpEchoReply(x)
+            | SocketOption::Ipv6EchoReply(x)
+            | SocketOption::Ipv6DelayedAddrRefresh(x)
+            | SocketOption::TcpServerSessionTimeout(x) => x as *const _ as *const core::ffi::c_void,
+
+            // NRF_SOL_SECURE level
             SocketOption::TlsHostName(s) => s.as_ptr() as *const core::ffi::c_void,
-            SocketOption::TlsPeerVerify(x) => x as *const _ as *const core::ffi::c_void,
-            SocketOption::TlsSessionCache(x) => x as *const _ as *const core::ffi::c_void,
+            SocketOption::TlsPeerVerify(x)
+            | SocketOption::TlsSessionCache(x)
+            | SocketOption::TlsRole(x)
+            | SocketOption::TlsSessionCachePurge(x)
+            | SocketOption::DtlsHandshakeTimeout(x)
+            | SocketOption::DtlsCid(x)
+            | SocketOption::DtlsConnSave(x)
+            | SocketOption::DtlsConnLoad(x) => x as *const _ as *const core::ffi::c_void,
             SocketOption::TlsTagList(x) => x.as_ptr() as *const core::ffi::c_void,
             SocketOption::TlsCipherSuiteList(x) => x.as_ptr() as *const core::ffi::c_void,
         }
@@ -754,9 +895,33 @@ impl SocketOption<'_> {
 
     pub(crate) fn get_length(&self) -> u32 {
         match self {
+            // NRF_SOL_SOCKET level
+            SocketOption::ReuseAddr(x)
+            | SocketOption::BindToPdn(x)
+            | SocketOption::ExceptionalData(x)
+            | SocketOption::KeepOpen(x)
+            | SocketOption::Rai(x) => core::mem::size_of_val(x) as u32,
+            SocketOption::ReceiveTimeout(x) | SocketOption::SendTimeout(x) => {
+                core::mem::size_of_val(x) as u32
+            }
+
+            // Protocol-level options
+            SocketOption::SilenceAll(x)
+            | SocketOption::IpEchoReply(x)
+            | SocketOption::Ipv6EchoReply(x)
+            | SocketOption::Ipv6DelayedAddrRefresh(x)
+            | SocketOption::TcpServerSessionTimeout(x) => core::mem::size_of_val(x) as u32,
+
+            // NRF_SOL_SECURE level
             SocketOption::TlsHostName(s) => s.len() as u32,
-            SocketOption::TlsPeerVerify(x) => core::mem::size_of_val(x) as u32,
-            SocketOption::TlsSessionCache(x) => core::mem::size_of_val(x) as u32,
+            SocketOption::TlsPeerVerify(x)
+            | SocketOption::TlsSessionCache(x)
+            | SocketOption::TlsRole(x)
+            | SocketOption::TlsSessionCachePurge(x)
+            | SocketOption::DtlsHandshakeTimeout(x)
+            | SocketOption::DtlsCid(x)
+            | SocketOption::DtlsConnSave(x)
+            | SocketOption::DtlsConnLoad(x) => core::mem::size_of_val(x) as u32,
             SocketOption::TlsTagList(x) => core::mem::size_of_val(*x) as u32,
             SocketOption::TlsCipherSuiteList(x) => core::mem::size_of_val(*x) as u32,
         }
