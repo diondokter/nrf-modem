@@ -271,11 +271,21 @@ impl Socket {
     /// Connect to the given socket address.
     ///
     /// This calls the `nrf_connect` function and can be used for tcp streams, udp connections and dtls connections.
+    pub async fn connect(&self, address: SocketAddr) -> Result<(), Error> {
+        unsafe {
+            self.connect_with_cancellation(address, &Default::default())
+                .await
+        }
+    }
+
+    /// Connect to the given socket address.
+    ///
+    /// This calls the `nrf_connect` function and can be used for tcp streams, udp connections and dtls connections.
     ///
     /// ## Safety
     ///
     /// If the connect is cancelled, the socket may be in a weird state and should be dropped.
-    pub async unsafe fn connect(
+    pub async unsafe fn connect_with_cancellation(
         &self,
         address: SocketAddr,
         token: &CancellationToken,
@@ -345,11 +355,21 @@ impl Socket {
     /// Bind the socket to a given address.
     ///
     /// This calls the `nrf_bind` function and can be used for udp sockets
+    pub async fn bind(&self, address: SocketAddr) -> Result<(), Error> {
+        unsafe {
+            self.bind_with_cancellation(address, &Default::default())
+                .await
+        }
+    }
+
+    /// Bind the socket to a given address.
+    ///
+    /// This calls the `nrf_bind` function and can be used for udp sockets
     ///
     /// ## Safety
     ///
     /// If the bind is cancelled, the socket may be in a weird state and should be dropped.
-    pub async unsafe fn bind(
+    pub async unsafe fn bind_with_cancellation(
         &self,
         address: SocketAddr,
         token: &CancellationToken,

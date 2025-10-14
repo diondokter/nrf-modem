@@ -102,7 +102,7 @@ impl DtlsSocket {
         let addr = SocketAddr::from((ip, port));
 
         unsafe {
-            inner.connect(addr, token).await?;
+            inner.connect_with_cancellation(addr, token).await?;
         }
 
         Ok(DtlsSocket { inner })

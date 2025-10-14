@@ -77,7 +77,7 @@ impl UdpSocket {
 
         let socket = Socket::create(family, SocketType::Datagram, SocketProtocol::Udp).await?;
 
-        match unsafe { socket.bind(addr, token).await } {
+        match unsafe { socket.bind_with_cancellation(addr, token).await } {
             Ok(_) => {
                 lte_link.deactivate().await?;
                 Ok(UdpSocket { inner: socket })

@@ -186,7 +186,7 @@ impl TlsStream {
             }))?;
         }
 
-        match unsafe { socket.connect(addr, token).await } {
+        match unsafe { socket.connect_with_cancellation(addr, token).await } {
             Ok(_) => {
                 lte_link.deactivate().await?;
                 Ok(TlsStream { inner: socket })
