@@ -29,7 +29,10 @@ macro_rules! impl_receive_from {
             buf: &'buf mut [u8],
             token: &CancellationToken,
         ) -> Result<(&'buf mut [u8], SocketAddr), Error> {
-            let (received_len, addr) = self.socket().receive_from(buf, token).await?;
+            let (received_len, addr) = self
+                .socket()
+                .receive_from_with_cancellation(buf, token)
+                .await?;
             Ok((&mut buf[..received_len], addr))
         }
     };
@@ -50,7 +53,10 @@ macro_rules! impl_send_to {
             addr: SocketAddr,
             token: &CancellationToken,
         ) -> Result<(), Error> {
-            self.socket().send_to(buf, addr, token).await.map(|_| ())
+            self.socket()
+                .send_to_with_cancellation(buf, addr, token)
+                .await
+                .map(|_| ())
         }
     };
 }

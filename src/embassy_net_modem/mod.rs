@@ -124,7 +124,10 @@ impl<'a> Runner<'a> {
 
             if let Some(socket) = net_socket {
                 let rx_fut = async {
-                    let size = socket.receive(&mut rx_buf, &token).await.unwrap();
+                    let size = socket
+                        .receive_with_cancellation(&mut rx_buf, &token)
+                        .await
+                        .unwrap();
                     let buf = rx_chan.rx_buf().await;
                     (size, buf)
                 };
@@ -142,7 +145,7 @@ impl<'a> Runner<'a> {
                         let mut remaining = size;
                         while remaining > 0 {
                             let size = socket
-                                .write(&buf[size - remaining..], &token)
+                                .write_with_cancellation(&buf[size - remaining..], &token)
                                 .await
                                 .unwrap();
                             remaining -= size;

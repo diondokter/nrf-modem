@@ -437,7 +437,17 @@ impl Socket {
     }
 
     /// Call the [nrfxlib_sys::nrf_send] in an async fashion
-    pub async fn write(&self, buffer: &[u8], token: &CancellationToken) -> Result<usize, Error> {
+    pub async fn write(&self, buffer: &[u8]) -> Result<usize, Error> {
+        self.write_with_cancellation(buffer, &Default::default())
+            .await
+    }
+
+    /// Call the [nrfxlib_sys::nrf_send] in an async fashion
+    pub async fn write_with_cancellation(
+        &self,
+        buffer: &[u8],
+        token: &CancellationToken,
+    ) -> Result<usize, Error> {
         token.bind_to_current_task().await;
 
         core::future::poll_fn(|cx| {
@@ -476,7 +486,13 @@ impl Socket {
     }
 
     /// Call the [nrfxlib_sys::nrf_recv] in an async fashion
-    pub async fn receive(
+    pub async fn receive(&self, buffer: &mut [u8]) -> Result<usize, Error> {
+        self.receive_with_cancellation(buffer, &Default::default())
+            .await
+    }
+
+    /// Call the [nrfxlib_sys::nrf_recv] in an async fashion
+    pub async fn receive_with_cancellation(
         &self,
         buffer: &mut [u8],
         token: &CancellationToken,
@@ -521,7 +537,13 @@ impl Socket {
     }
 
     /// Call the [nrfxlib_sys::nrf_recvfrom] in an async fashion
-    pub async fn receive_from(
+    pub async fn receive_from(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), Error> {
+        self.receive_from_with_cancellation(buffer, &Default::default())
+            .await
+    }
+
+    /// Call the [nrfxlib_sys::nrf_recvfrom] in an async fashion
+    pub async fn receive_from_with_cancellation(
         &self,
         buffer: &mut [u8],
         token: &CancellationToken,
@@ -580,7 +602,13 @@ impl Socket {
     }
 
     /// Call the [nrfxlib_sys::nrf_sendto] in an async fashion
-    pub async fn send_to(
+    pub async fn send_to(&self, buffer: &[u8], address: SocketAddr) -> Result<usize, Error> {
+        self.send_to_with_cancellation(buffer, address, &Default::default())
+            .await
+    }
+
+    /// Call the [nrfxlib_sys::nrf_sendto] in an async fashion
+    pub async fn send_to_with_cancellation(
         &self,
         buffer: &[u8],
         address: SocketAddr,
