@@ -645,8 +645,8 @@ impl Socket {
             )
         };
 
-        if result < 0 {
-            Err(result.into())
+        if result == -1 {
+            Err((get_last_error() as i32).into())
         } else {
             Ok(())
         }
