@@ -813,8 +813,12 @@ pub enum CipherSuite {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketOptionError {
+    // The option could not be set when requested, try again.
+    TryAgain,
     // The socket argument is not a valid file descriptor.
     InvalidFileDescriptor,
+    // The socket option NRF_SO_RAI with value NRF_RAI_NO_DATA cannot be set on a socket that is not connected.
+    DestinationAddressRequired,
     // The send and receive timeout values are too big to fit into the timeout fields in the socket structure.
     TimeoutTooBig,
     // The specified option is invalid at the specified socket level or the socket has been shut down.
@@ -829,18 +833,26 @@ pub enum SocketOptionError {
     OutOfMemory,
     // Insufficient resources are available in the system to complete the call.
     OutOfResources,
+    // The option is not supported with the current socket configuration.
+    OperationNotSupported,
+    // Modem was shut down.
+    ModemShutdown,
 }
 
 impl From<i32> for SocketOptionError {
     fn from(errno: i32) -> Self {
         match errno.unsigned_abs() {
+            nrfxlib_sys::NRF_EAGAIN => SocketOptionError::TryAgain,
             nrfxlib_sys::NRF_EBADF => SocketOptionError::InvalidFileDescriptor,
+            nrfxlib_sys::NRF_EDESTADDRREQ => SocketOptionError::DestinationAddressRequired,
             nrfxlib_sys::NRF_EINVAL => SocketOptionError::InvalidOption,
             nrfxlib_sys::NRF_EISCONN => SocketOptionError::AlreadyConnected,
             nrfxlib_sys::NRF_ENOPROTOOPT => SocketOptionError::UnsupportedOption,
             nrfxlib_sys::NRF_ENOTSOCK => SocketOptionError::NotASocket,
             nrfxlib_sys::NRF_ENOMEM => SocketOptionError::OutOfMemory,
             nrfxlib_sys::NRF_ENOBUFS => SocketOptionError::OutOfResources,
+            nrfxlib_sys::NRF_EOPNOTSUPP => SocketOptionError::OperationNotSupported,
+            nrfxlib_sys::NRF_ESHUTDOWN => SocketOptionError::ModemShutdown,
             _ => panic!("Unknown error code: {}", errno),
         }
     }
