@@ -149,7 +149,11 @@ impl SocketDirection {
     }
 }
 
-/// Internal socket implementation
+/// A socket for network communication through the nRF modem.
+///
+/// This struct provides an async interface to the nRF modem's socket functionality,
+/// supporting TCP, UDP, TLS, and DTLS protocols. The socket automatically manages
+/// the LTE link lifetime and provides non-blocking async operations.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Socket {
@@ -247,6 +251,11 @@ impl Socket {
         self.fd
     }
 
+    /// Split the socket into two handles that can be used independently.
+    ///
+    /// This is useful for splitting a socket into separate read and write handles
+    /// that can be used in different async tasks. Each handle maintains its own
+    /// LTE link to keep the connection alive.
     pub async fn split(mut self) -> Result<(SplitSocketHandle, SplitSocketHandle), Error> {
         let index = SplitSocketHandle::get_new_spot();
         self.split = true;
@@ -270,12 +279,22 @@ impl Socket {
 
     /// Connect to the given socket address.
     ///
-    /// This calls the `nrf_connect` function and can be used for tcp streams, udp connections and dtls connections.
+    /// This calls the [nrfxlib_sys::nrf_connect] function and can be used for tcp streams, udp connections and dtls connections.
+    pub async fn connect(&self, address: SocketAddr) -> Result<(), Error> {
+        unsafe {
+            self.connect_with_cancellation(address, &Default::default())
+                .await
+        }
+    }
+
+    /// Connect to the given socket address.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_connect] function and can be used for tcp streams, udp connections and dtls connections.
     ///
     /// ## Safety
     ///
     /// If the connect is cancelled, the socket may be in a weird state and should be dropped.
-    pub async unsafe fn connect(
+    pub async unsafe fn connect_with_cancellation(
         &self,
         address: SocketAddr,
         token: &CancellationToken,
@@ -344,12 +363,22 @@ impl Socket {
 
     /// Bind the socket to a given address.
     ///
-    /// This calls the `nrf_bind` function and can be used for udp sockets
+    /// This calls the [nrfxlib_sys::nrf_bind] function and can be used for UDP sockets.
+    pub async fn bind(&self, address: SocketAddr) -> Result<(), Error> {
+        unsafe {
+            self.bind_with_cancellation(address, &Default::default())
+                .await
+        }
+    }
+
+    /// Bind the socket to a given address.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_bind] function and can be used for UDP sockets.
     ///
     /// ## Safety
     ///
     /// If the bind is cancelled, the socket may be in a weird state and should be dropped.
-    pub async unsafe fn bind(
+    pub async unsafe fn bind_with_cancellation(
         &self,
         address: SocketAddr,
         token: &CancellationToken,
@@ -416,8 +445,24 @@ impl Socket {
         Ok(())
     }
 
-    /// Call the [nrfxlib_sys::nrf_send] in an async fashion
-    pub async fn write(&self, buffer: &[u8], token: &CancellationToken) -> Result<usize, Error> {
+    /// Write data to the socket.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_send] function and can be used for TCP streams and dTLS connections.
+    pub async fn write(&self, buffer: &[u8]) -> Result<usize, Error> {
+        self.write_with_cancellation(buffer, &Default::default())
+            .await
+    }
+
+    /// Write data to the socket with cancellation support.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_send] function and can be used for TCP streams and dTLS connections.
+    ///
+    /// This operation can be cancelled using the provided [`CancellationToken`].
+    pub async fn write_with_cancellation(
+        &self,
+        buffer: &[u8],
+        token: &CancellationToken,
+    ) -> Result<usize, Error> {
         token.bind_to_current_task().await;
 
         core::future::poll_fn(|cx| {
@@ -455,8 +500,20 @@ impl Socket {
         .await
     }
 
-    /// Call the [nrfxlib_sys::nrf_recv] in an async fashion
-    pub async fn receive(
+    /// Receive data from the socket.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_recv] function and can be used for TCP streams and dTLS connections.
+    pub async fn receive(&self, buffer: &mut [u8]) -> Result<usize, Error> {
+        self.receive_with_cancellation(buffer, &Default::default())
+            .await
+    }
+
+    /// Receive data from the socket with cancellation support.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_recv] function and can be used for TCP streams and dTLS connections.
+    ///
+    /// This operation can be cancelled using the provided [`CancellationToken`].
+    pub async fn receive_with_cancellation(
         &self,
         buffer: &mut [u8],
         token: &CancellationToken,
@@ -500,8 +557,20 @@ impl Socket {
         .await
     }
 
-    /// Call the [nrfxlib_sys::nrf_recvfrom] in an async fashion
-    pub async fn receive_from(
+    /// Receive data from the socket along with the sender's address.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_recvfrom] function and can be used for UDP sockets.
+    pub async fn receive_from(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), Error> {
+        self.receive_from_with_cancellation(buffer, &Default::default())
+            .await
+    }
+
+    /// Receive data from the socket along with the sender's address, with cancellation support.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_recvfrom] function and can be used for UDP sockets.
+    ///
+    /// This operation can be cancelled using the provided [`CancellationToken`].
+    pub async fn receive_from_with_cancellation(
         &self,
         buffer: &mut [u8],
         token: &CancellationToken,
@@ -559,8 +628,20 @@ impl Socket {
         .await
     }
 
-    /// Call the [nrfxlib_sys::nrf_sendto] in an async fashion
-    pub async fn send_to(
+    /// Send data to a specific address through the socket.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_sendto] function and can be used for UDP sockets.
+    pub async fn send_to(&self, buffer: &[u8], address: SocketAddr) -> Result<usize, Error> {
+        self.send_to_with_cancellation(buffer, address, &Default::default())
+            .await
+    }
+
+    /// Send data to a specific address through the socket with cancellation support.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_sendto] function and can be used for UDP sockets.
+    ///
+    /// This operation can be cancelled using the provided [`CancellationToken`].
+    pub async fn send_to_with_cancellation(
         &self,
         buffer: &[u8],
         address: SocketAddr,
@@ -612,21 +693,28 @@ impl Socket {
         .await
     }
 
+    /// Set a socket option.
+    ///
+    /// This calls the [nrfxlib_sys::nrf_setsockopt] function and provides access to various socket
+    /// configuration options including timeouts, TLS settings, PDN binding, and protocol-specific
+    /// options.
+    ///
+    /// See [`SocketOption`] for available options.
     pub fn set_option<'a>(&'a self, option: SocketOption<'a>) -> Result<(), SocketOptionError> {
         let length = option.get_length();
 
         let result = unsafe {
             nrfxlib_sys::nrf_setsockopt(
                 self.fd,
-                nrfxlib_sys::NRF_SOL_SECURE.try_into().unwrap(),
+                option.get_level(),
                 option.get_name(),
                 option.get_value(),
                 length,
             )
         };
 
-        if result < 0 {
-            Err(result.into())
+        if result == -1 {
+            Err((get_last_error() as i32).into())
         } else {
             Ok(())
         }
@@ -659,64 +747,250 @@ impl PartialEq for Socket {
 }
 impl Eq for Socket {}
 
+/// Socket address family.
+///
+/// Specifies the address family to use for the socket.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketFamily {
+    /// Unspecified address family.
     Unspecified = nrfxlib_sys::NRF_AF_UNSPEC,
+    /// IPv4 address family.
     Ipv4 = nrfxlib_sys::NRF_AF_INET,
+    /// IPv6 address family.
     Ipv6 = nrfxlib_sys::NRF_AF_INET6,
+    /// Raw packet interface.
     Raw = nrfxlib_sys::NRF_AF_PACKET,
 }
 
+/// Socket type.
+///
+/// Specifies the communication semantics for the socket.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketType {
+    /// Stream socket (TCP).
+    ///
+    /// Provides sequenced, reliable, two-way, connection-based byte streams.
     Stream = nrfxlib_sys::NRF_SOCK_STREAM,
+    /// Datagram socket (UDP).
+    ///
+    /// Provides connectionless, unreliable messages of a fixed maximum length.
     Datagram = nrfxlib_sys::NRF_SOCK_DGRAM,
+    /// Raw socket.
+    ///
+    /// Provides raw network protocol access.
     Raw = nrfxlib_sys::NRF_SOCK_RAW,
 }
 
+/// Socket protocol.
+///
+/// Specifies the protocol to use with the socket.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketProtocol {
+    /// Internet Protocol.
     IP = nrfxlib_sys::NRF_IPPROTO_IP,
+    /// Transmission Control Protocol.
     Tcp = nrfxlib_sys::NRF_IPPROTO_TCP,
+    /// User Datagram Protocol.
     Udp = nrfxlib_sys::NRF_IPPROTO_UDP,
+    /// Internet Protocol Version 6.
     Ipv6 = nrfxlib_sys::NRF_IPPROTO_IPV6,
+    /// Raw IP packets.
     Raw = nrfxlib_sys::NRF_IPPROTO_RAW,
+    /// All protocols.
     All = nrfxlib_sys::NRF_IPPROTO_ALL,
+    /// Transport Layer Security 1.2.
     Tls1v2 = nrfxlib_sys::NRF_SPROTO_TLS1v2,
+    /// Datagram Transport Layer Security 1.2.
     DTls1v2 = nrfxlib_sys::NRF_SPROTO_DTLS1v2,
 }
 
+/// Socket configuration options.
+///
+/// These options can be set using [`Socket::set_option`] to configure various
+/// aspects of socket behavior including timeouts, TLS settings, PDN binding,
+/// and protocol-specific options.
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum SocketOption<'a> {
+    // NRF_SOL_SOCKET level options
+    /// Non-zero requests reuse of local addresses in bind (protocol-specific).
+    ReuseAddr(i32),
+    /// Timeout value for socket receive and accept operations.
+    ///
+    /// Minimum supported resolution is 1 millisecond.
+    ReceiveTimeout(nrfxlib_sys::nrf_timeval),
+    /// Timeout value for socket send operation.
+    ///
+    /// Minimum supported resolution is 1 millisecond.
+    SendTimeout(nrfxlib_sys::nrf_timeval),
+    /// Bind this socket to a specific PDN ID.
+    BindToPdn(i32),
+    /// Send data on socket as part of exceptional event.
+    ///
+    /// Requires network support and PDN configuration with AT%EXCEPTIONALDATA.
+    ExceptionalData(i32),
+    /// Keep the socket open when its PDN connection is lost, or the device is set to flight mode.
+    KeepOpen(i32),
+    /// Release Assistance Indication (RAI).
+    ///
+    /// Values: NRF_RAI_NO_DATA, NRF_RAI_LAST, NRF_RAI_ONE_RESP, NRF_RAI_ONGOING, NRF_RAI_WAIT_MORE
+    Rai(i32),
+
+    // Protocol-level options
+    /// Non-zero disables ICMP echo replies on both IPv4 and IPv6.
+    SilenceAll(i32),
+    /// Non-zero enables ICMP echo replies on IPv4.
+    IpEchoReply(i32),
+    /// Non-zero enables ICMP echo replies on IPv6.
+    Ipv6EchoReply(i32),
+    /// Non-zero delays IPv6 address refresh during power saving mode.
+    Ipv6DelayedAddrRefresh(i32),
+    /// Configure TCP server session inactivity timeout (0-135 seconds).
+    TcpServerSessionTimeout(i32),
+
+    // NRF_SOL_SECURE level options
+    /// Set the hostname used for peer verification.
     TlsHostName(&'a str),
+    /// Set the peer verification level.
+    ///
+    /// Values: 0 (disabled), 1 (optional), 2 (required)
     TlsPeerVerify(i32),
+    /// Non-zero enables TLS session caching.
     TlsSessionCache(i32),
+    /// Set/get the security tag associated with a socket.
     TlsTagList(&'a [nrfxlib_sys::nrf_sec_tag_t]),
+    /// Set/get allowed cipher suite list.
     TlsCipherSuiteList(&'a [i32]),
+    /// Set the role for the connection (client or server).
+    ///
+    /// Values: 0 (client), 1 (server)
+    TlsRole(i32),
+    /// Delete TLS session cache (write-only).
+    TlsSessionCachePurge(i32),
+    /// Set the DTLS handshake timeout.
+    ///
+    /// Values: 0 (no timeout), or specific timeout values
+    DtlsHandshakeTimeout(i32),
+    /// Set DTLS Connection ID setting.
+    ///
+    /// Values: 0 (disabled), 1 (supported), 2 (enabled)
+    DtlsCid(i32),
+    /// Save DTLS connection (write-only).
+    DtlsConnSave(i32),
+    /// Load DTLS connection (write-only).
+    DtlsConnLoad(i32),
 }
 impl SocketOption<'_> {
+    pub(crate) fn get_level(&self) -> i32 {
+        match self {
+            // NRF_SOL_SOCKET level
+            SocketOption::ReuseAddr(_)
+            | SocketOption::ReceiveTimeout(_)
+            | SocketOption::SendTimeout(_)
+            | SocketOption::BindToPdn(_)
+            | SocketOption::ExceptionalData(_)
+            | SocketOption::KeepOpen(_)
+            | SocketOption::Rai(_) => nrfxlib_sys::NRF_SOL_SOCKET as i32,
+
+            // Protocol levels
+            SocketOption::SilenceAll(_) => nrfxlib_sys::NRF_IPPROTO_ALL as i32,
+            SocketOption::IpEchoReply(_) => nrfxlib_sys::NRF_IPPROTO_IP as i32,
+            SocketOption::Ipv6EchoReply(_) | SocketOption::Ipv6DelayedAddrRefresh(_) => {
+                nrfxlib_sys::NRF_IPPROTO_IPV6 as i32
+            }
+            SocketOption::TcpServerSessionTimeout(_) => nrfxlib_sys::NRF_IPPROTO_TCP as i32,
+
+            // NRF_SOL_SECURE level
+            SocketOption::TlsHostName(_)
+            | SocketOption::TlsPeerVerify(_)
+            | SocketOption::TlsSessionCache(_)
+            | SocketOption::TlsTagList(_)
+            | SocketOption::TlsCipherSuiteList(_)
+            | SocketOption::TlsRole(_)
+            | SocketOption::TlsSessionCachePurge(_)
+            | SocketOption::DtlsHandshakeTimeout(_)
+            | SocketOption::DtlsCid(_)
+            | SocketOption::DtlsConnSave(_)
+            | SocketOption::DtlsConnLoad(_) => nrfxlib_sys::NRF_SOL_SECURE as i32,
+        }
+    }
+
     pub(crate) fn get_name(&self) -> i32 {
         match self {
+            // NRF_SOL_SOCKET level
+            SocketOption::ReuseAddr(_) => nrfxlib_sys::NRF_SO_REUSEADDR as i32,
+            SocketOption::ReceiveTimeout(_) => nrfxlib_sys::NRF_SO_RCVTIMEO as i32,
+            SocketOption::SendTimeout(_) => nrfxlib_sys::NRF_SO_SNDTIMEO as i32,
+            SocketOption::BindToPdn(_) => nrfxlib_sys::NRF_SO_BINDTOPDN as i32,
+            SocketOption::ExceptionalData(_) => nrfxlib_sys::NRF_SO_EXCEPTIONAL_DATA as i32,
+            SocketOption::KeepOpen(_) => nrfxlib_sys::NRF_SO_KEEPOPEN as i32,
+            SocketOption::Rai(_) => nrfxlib_sys::NRF_SO_RAI as i32,
+
+            // Protocol-level options
+            SocketOption::SilenceAll(_) => nrfxlib_sys::NRF_SO_SILENCE_ALL as i32,
+            SocketOption::IpEchoReply(_) => nrfxlib_sys::NRF_SO_IP_ECHO_REPLY as i32,
+            SocketOption::Ipv6EchoReply(_) => nrfxlib_sys::NRF_SO_IPV6_ECHO_REPLY as i32,
+            SocketOption::Ipv6DelayedAddrRefresh(_) => {
+                nrfxlib_sys::NRF_SO_IPV6_DELAYED_ADDR_REFRESH as i32
+            }
+            SocketOption::TcpServerSessionTimeout(_) => {
+                nrfxlib_sys::NRF_SO_TCP_SRV_SESSTIMEO as i32
+            }
+
+            // NRF_SOL_SECURE level
             SocketOption::TlsHostName(_) => nrfxlib_sys::NRF_SO_SEC_HOSTNAME as i32,
             SocketOption::TlsPeerVerify(_) => nrfxlib_sys::NRF_SO_SEC_PEER_VERIFY as i32,
             SocketOption::TlsSessionCache(_) => nrfxlib_sys::NRF_SO_SEC_SESSION_CACHE as i32,
             SocketOption::TlsTagList(_) => nrfxlib_sys::NRF_SO_SEC_TAG_LIST as i32,
             SocketOption::TlsCipherSuiteList(_) => nrfxlib_sys::NRF_SO_SEC_CIPHERSUITE_LIST as i32,
+            SocketOption::TlsRole(_) => nrfxlib_sys::NRF_SO_SEC_ROLE as i32,
+            SocketOption::TlsSessionCachePurge(_) => {
+                nrfxlib_sys::NRF_SO_SEC_SESSION_CACHE_PURGE as i32
+            }
+            SocketOption::DtlsHandshakeTimeout(_) => {
+                nrfxlib_sys::NRF_SO_SEC_DTLS_HANDSHAKE_TIMEO as i32
+            }
+            SocketOption::DtlsCid(_) => nrfxlib_sys::NRF_SO_SEC_DTLS_CID as i32,
+            SocketOption::DtlsConnSave(_) => nrfxlib_sys::NRF_SO_SEC_DTLS_CONN_SAVE as i32,
+            SocketOption::DtlsConnLoad(_) => nrfxlib_sys::NRF_SO_SEC_DTLS_CONN_LOAD as i32,
         }
     }
 
     pub(crate) fn get_value(&self) -> *const core::ffi::c_void {
         match self {
+            // NRF_SOL_SOCKET level
+            SocketOption::ReuseAddr(x)
+            | SocketOption::BindToPdn(x)
+            | SocketOption::ExceptionalData(x)
+            | SocketOption::KeepOpen(x)
+            | SocketOption::Rai(x) => x as *const _ as *const core::ffi::c_void,
+            SocketOption::ReceiveTimeout(x) | SocketOption::SendTimeout(x) => {
+                x as *const _ as *const core::ffi::c_void
+            }
+
+            // Protocol-level options
+            SocketOption::SilenceAll(x)
+            | SocketOption::IpEchoReply(x)
+            | SocketOption::Ipv6EchoReply(x)
+            | SocketOption::Ipv6DelayedAddrRefresh(x)
+            | SocketOption::TcpServerSessionTimeout(x) => x as *const _ as *const core::ffi::c_void,
+
+            // NRF_SOL_SECURE level
             SocketOption::TlsHostName(s) => s.as_ptr() as *const core::ffi::c_void,
-            SocketOption::TlsPeerVerify(x) => x as *const _ as *const core::ffi::c_void,
-            SocketOption::TlsSessionCache(x) => x as *const _ as *const core::ffi::c_void,
+            SocketOption::TlsPeerVerify(x)
+            | SocketOption::TlsSessionCache(x)
+            | SocketOption::TlsRole(x)
+            | SocketOption::TlsSessionCachePurge(x)
+            | SocketOption::DtlsHandshakeTimeout(x)
+            | SocketOption::DtlsCid(x)
+            | SocketOption::DtlsConnSave(x)
+            | SocketOption::DtlsConnLoad(x) => x as *const _ as *const core::ffi::c_void,
             SocketOption::TlsTagList(x) => x.as_ptr() as *const core::ffi::c_void,
             SocketOption::TlsCipherSuiteList(x) => x.as_ptr() as *const core::ffi::c_void,
         }
@@ -724,23 +998,54 @@ impl SocketOption<'_> {
 
     pub(crate) fn get_length(&self) -> u32 {
         match self {
+            // NRF_SOL_SOCKET level
+            SocketOption::ReuseAddr(x)
+            | SocketOption::BindToPdn(x)
+            | SocketOption::ExceptionalData(x)
+            | SocketOption::KeepOpen(x)
+            | SocketOption::Rai(x) => core::mem::size_of_val(x) as u32,
+            SocketOption::ReceiveTimeout(x) | SocketOption::SendTimeout(x) => {
+                core::mem::size_of_val(x) as u32
+            }
+
+            // Protocol-level options
+            SocketOption::SilenceAll(x)
+            | SocketOption::IpEchoReply(x)
+            | SocketOption::Ipv6EchoReply(x)
+            | SocketOption::Ipv6DelayedAddrRefresh(x)
+            | SocketOption::TcpServerSessionTimeout(x) => core::mem::size_of_val(x) as u32,
+
+            // NRF_SOL_SECURE level
             SocketOption::TlsHostName(s) => s.len() as u32,
-            SocketOption::TlsPeerVerify(x) => core::mem::size_of_val(x) as u32,
-            SocketOption::TlsSessionCache(x) => core::mem::size_of_val(x) as u32,
+            SocketOption::TlsPeerVerify(x)
+            | SocketOption::TlsSessionCache(x)
+            | SocketOption::TlsRole(x)
+            | SocketOption::TlsSessionCachePurge(x)
+            | SocketOption::DtlsHandshakeTimeout(x)
+            | SocketOption::DtlsCid(x)
+            | SocketOption::DtlsConnSave(x)
+            | SocketOption::DtlsConnLoad(x) => core::mem::size_of_val(x) as u32,
             SocketOption::TlsTagList(x) => core::mem::size_of_val(*x) as u32,
             SocketOption::TlsCipherSuiteList(x) => core::mem::size_of_val(*x) as u32,
         }
     }
 }
 
+/// TLS peer verification level.
+///
+/// Controls whether and how the peer's TLS certificate is verified.
 #[derive(Debug, Copy, Clone)]
 pub enum PeerVerification {
+    /// Peer verification is required. The connection will fail if verification fails.
     Enabled,
+    /// Peer verification is optional. The connection proceeds even if verification fails.
     Optional,
+    /// Peer verification is disabled. No verification is performed.
     Disabled,
 }
 
 impl PeerVerification {
+    /// Convert the peer verification level to an integer value for use with socket options.
     pub fn as_integer(self) -> i32 {
         match self {
             PeerVerification::Enabled => 2,
@@ -750,7 +1055,10 @@ impl PeerVerification {
     }
 }
 
-/// These are the allowed cipher suites for the nrf9160 modem as per <https://docs.nordicsemi.com/bundle/nrfxlib-apis-latest/page/group_nrf_socket_tls_cipher_suites.html>
+/// TLS cipher suites supported by the nRF9160 modem.
+///
+/// These are the allowed cipher suites for the nRF9160 modem.
+/// For more information, see the [Nordic documentation](https://docs.nordicsemi.com/bundle/nrfxlib-apis-latest/page/group_nrf_socket_tls_cipher_suites.html).
 #[repr(i32)]
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone)]
@@ -780,37 +1088,50 @@ pub enum CipherSuite {
         nrfxlib_sys::NRF_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 as i32,
 }
 
+/// Errors that can occur when setting socket options.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SocketOptionError {
-    // The socket argument is not a valid file descriptor.
+    /// The option could not be set when requested, try again.
+    TryAgain,
+    /// The socket argument is not a valid file descriptor.
     InvalidFileDescriptor,
-    // The send and receive timeout values are too big to fit into the timeout fields in the socket structure.
+    /// The socket option NRF_SO_RAI with value NRF_RAI_NO_DATA cannot be set on a socket that is not connected.
+    DestinationAddressRequired,
+    /// The send and receive timeout values are too big to fit into the timeout fields in the socket structure.
     TimeoutTooBig,
-    // The specified option is invalid at the specified socket level or the socket has been shut down.
+    /// The specified option is invalid at the specified socket level or the socket has been shut down.
     InvalidOption,
-    // The socket is already connected, and a specified option cannot be set while the socket is connected.
+    /// The socket is already connected, and a specified option cannot be set while the socket is connected.
     AlreadyConnected,
-    // The option is not supported by the protocol.
+    /// The option is not supported by the protocol.
     UnsupportedOption,
-    // The socket argument does not refer to a socket.
+    /// The socket argument does not refer to a socket.
     NotASocket,
-    // There was insufficient memory available for the operation to complete.
+    /// There was insufficient memory available for the operation to complete.
     OutOfMemory,
-    // Insufficient resources are available in the system to complete the call.
+    /// Insufficient resources are available in the system to complete the call.
     OutOfResources,
+    /// The option is not supported with the current socket configuration.
+    OperationNotSupported,
+    /// Modem was shut down.
+    ModemShutdown,
 }
 
 impl From<i32> for SocketOptionError {
     fn from(errno: i32) -> Self {
         match errno.unsigned_abs() {
+            nrfxlib_sys::NRF_EAGAIN => SocketOptionError::TryAgain,
             nrfxlib_sys::NRF_EBADF => SocketOptionError::InvalidFileDescriptor,
+            nrfxlib_sys::NRF_EDESTADDRREQ => SocketOptionError::DestinationAddressRequired,
             nrfxlib_sys::NRF_EINVAL => SocketOptionError::InvalidOption,
             nrfxlib_sys::NRF_EISCONN => SocketOptionError::AlreadyConnected,
             nrfxlib_sys::NRF_ENOPROTOOPT => SocketOptionError::UnsupportedOption,
             nrfxlib_sys::NRF_ENOTSOCK => SocketOptionError::NotASocket,
             nrfxlib_sys::NRF_ENOMEM => SocketOptionError::OutOfMemory,
             nrfxlib_sys::NRF_ENOBUFS => SocketOptionError::OutOfResources,
+            nrfxlib_sys::NRF_EOPNOTSUPP => SocketOptionError::OperationNotSupported,
+            nrfxlib_sys::NRF_ESHUTDOWN => SocketOptionError::ModemShutdown,
             _ => panic!("Unknown error code: {}", errno),
         }
     }
@@ -821,12 +1142,26 @@ const ATOMIC_U8_INIT: AtomicU8 = AtomicU8::new(0);
 static ACTIVE_SPLIT_SOCKETS: [AtomicU8; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize] =
     [ATOMIC_U8_INIT; nrfxlib_sys::NRF_MODEM_MAX_SOCKET_COUNT as usize];
 
+/// A handle to a split socket.
+///
+/// Created by calling [`Socket::split`]. This allows a socket to be split into
+/// two handles that can be used independently in different async tasks (e.g., one
+/// for reading and one for writing).
+///
+/// Each handle maintains its own LTE link and can be deactivated independently,
+/// though the underlying socket is only closed when the last handle is dropped.
 pub struct SplitSocketHandle {
     inner: Option<Socket>,
     index: usize,
 }
 
 impl SplitSocketHandle {
+    /// Deactivates this socket handle and its LTE link.
+    ///
+    /// This will deactivate the LTE link associated with this handle. If this is the
+    /// last remaining handle to the split socket, the underlying socket will also be closed.
+    ///
+    /// A normal drop will do the same thing, but blocking.
     pub async fn deactivate(mut self) -> Result<(), Error> {
         let mut inner = self.inner.take().unwrap();
 

@@ -32,7 +32,7 @@ macro_rules! impl_receive {
             let max_receive_len = 1024.min(buf.len());
             let received_bytes = self
                 .socket()
-                .receive(&mut buf[..max_receive_len], token)
+                .receive_with_cancellation(&mut buf[..max_receive_len], token)
                 .await?;
             Ok(&mut buf[..received_bytes])
         }
@@ -97,7 +97,7 @@ macro_rules! impl_write {
                 let max_write_len = 1024.min(buf.len() - written_bytes);
                 written_bytes += self
                     .socket()
-                    .write(&buf[written_bytes..][..max_write_len], token)
+                    .write_with_cancellation(&buf[written_bytes..][..max_write_len], token)
                     .await?;
             }
 
@@ -186,7 +186,7 @@ impl TlsStream {
             }))?;
         }
 
-        match unsafe { socket.connect(addr, token).await } {
+        match unsafe { socket.connect_with_cancellation(addr, token).await } {
             Ok(_) => {
                 lte_link.deactivate().await?;
                 Ok(TlsStream { inner: socket })

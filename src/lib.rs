@@ -28,7 +28,8 @@ mod gnss;
 pub(crate) mod ip;
 mod lte_link;
 mod sms;
-pub(crate) mod socket;
+/// Contains the core socket types and related functionality.
+pub mod socket;
 mod tcp_stream;
 mod tls_stream;
 mod udp_socket;
