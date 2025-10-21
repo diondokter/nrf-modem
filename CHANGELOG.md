@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.9.1 (2025-10-21)
+
+- Made the low level socket public and well documented. Use it at your own risk of getting things wrong.
+
 ## 0.9.0 (2025-10-01)
 
 - *Breaking*: Made the `embedded_nal_async` module private that was accidentally left public
