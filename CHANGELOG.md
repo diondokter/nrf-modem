@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.9.2 (2025-10-30)
+
+- A modem fault not triggers a panic instead of leaving the modem in a broken state.
+  Ideally there's better handling of it, so PRs welcome!
+
 ## 0.9.1 (2025-10-21)
 
 - Made the low level socket public and well documented. Use it at your own risk of getting things wrong.

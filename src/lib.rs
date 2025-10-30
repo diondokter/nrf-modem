@@ -309,12 +309,18 @@ impl Default for MemoryLayout {
     }
 }
 
-unsafe extern "C" fn modem_fault_handler(_info: *mut nrfxlib_sys::nrf_modem_fault_info) {
+unsafe extern "C" fn modem_fault_handler(info: *mut nrfxlib_sys::nrf_modem_fault_info) {
     #[cfg(feature = "defmt")]
-    defmt::error!(
+    defmt::panic!(
         "Modem fault - reason: {}, pc: {}",
-        (*_info).reason,
-        (*_info).program_counter
+        (*info).reason,
+        (*info).program_counter
+    );
+    #[cfg(not(feature = "defmt"))]
+    panic!(
+        "Modem fault - reason: {}, pc: {}",
+        (*info).reason,
+        (*info).program_counter
     );
 }
 
