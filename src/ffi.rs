@@ -399,6 +399,13 @@ pub unsafe extern "C" fn nrf_modem_os_sem_init(
     limit: core::ffi::c_uint,
 ) -> core::ffi::c_int {
     if sem.is_null() || initial_count > limit {
+        #[cfg(feature = "defmt")]
+        defmt::error!(
+            "Failed to init semaphore: {} || {} > {}",
+            sem.is_null(),
+            initial_count,
+            limit
+        );
         return -(nrfxlib_sys::NRF_EINVAL as i32);
     }
 
@@ -408,7 +415,8 @@ pub unsafe extern "C" fn nrf_modem_os_sem_init(
         *sem = nrf_modem_os_alloc(core::mem::size_of::<Semaphore>()) as *mut _;
 
         if (*sem).is_null() {
-            // We are out of memory
+            #[cfg(feature = "defmt")]
+            defmt::error!("Failed to init semaphore: out of memory");
             return -(nrfxlib_sys::NRF_ENOMEM as i32);
         }
     }
@@ -578,6 +586,8 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_init(
     mutex: *mut *mut core::ffi::c_void,
 ) -> core::ffi::c_int {
     if mutex.is_null() {
+        #[cfg(feature = "defmt")]
+        defmt::error!("Failed to init mutex (null argument)");
         return -(nrfxlib_sys::NRF_EINVAL as i32);
     }
 
@@ -588,7 +598,8 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_init(
             as *mut MaybeUninit<MutexLock>;
 
         if p.is_null() {
-            // We are out of memory
+            #[cfg(feature = "defmt")]
+            defmt::error!("Failed to init mutex: out of memory");
             return -(nrfxlib_sys::NRF_ENOMEM as i32);
         }
 
