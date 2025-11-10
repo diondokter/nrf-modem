@@ -139,6 +139,9 @@ pub unsafe extern "C" fn nrf_modem_os_timedwait(_context: u32, timeout: *mut i32
         return -(nrfxlib_sys::NRF_EPERM as i32);
     }
 
+    // For DECT we can not rely on this check: The DECT libmodem already calls
+    // nrf_modem_os_timedwait during its initialization before it sets the is_initialized bit.
+    #[cfg(not(feature = "dect"))]
     if !nrfxlib_sys::nrf_modem_is_initialized() {
         return -(nrfxlib_sys::NRF_ESHUTDOWN as i32);
     }
