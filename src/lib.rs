@@ -102,12 +102,9 @@ pub async fn init(mode: SystemMode, #[cfg(feature = "os-irq")] os_irq: u8) -> Re
     .await
 }
 
-/// Start the NRF Modem library with a manually specified memory layout
-///
-/// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
-/// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
-pub async fn init_with_custom_layout(
-    mode: SystemMode,
+/// Common initialization code between [`init_with_custom_layout`] and
+/// [`init_dect_with_custom_layout`]
+async fn init_with_custom_layout_core(
     memory_layout: MemoryLayout,
     #[cfg(feature = "os-irq")] os_irq: u8,
 ) -> Result<(), Error> {
@@ -207,6 +204,25 @@ pub async fn init_with_custom_layout(
 
     // OK, let's start the library
     unsafe { nrfxlib_sys::nrf_modem_init(PARAMS.get()) }.into_result()?;
+
+    Ok(())
+}
+
+/// Start the NRF Modem library with a manually specified memory layout
+///
+/// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
+/// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
+pub async fn init_with_custom_layout(
+    mode: SystemMode,
+    memory_layout: MemoryLayout,
+    #[cfg(feature = "os-irq")] os_irq: u8,
+) -> Result<(), Error> {
+    init_with_custom_layout_core(
+        memory_layout,
+        #[cfg(feature = "os-irq")]
+        os_irq,
+    )
+    .await?;
 
     // Start tracing
     #[cfg(feature = "modem-trace")]
