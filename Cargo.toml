@@ -47,6 +47,13 @@ dns-async = ["dep:embassy-time"]
 modem-trace = []
 modem-log = ["nrfxlib-sys/log", "dep:cc"]
 
+### Switches the library into DECT-2020 NR+ mode.
+##
+## This subtly alters the behavior, while reusing the same core functionality:
+## #For example, the size of the CTRL memory region is adjusted, and a shutdown
+## feature of the FFI is bypassed.
+dect = ["nrfxlib-sys/dect"]
+
 nrf9160 = ["nrfxlib-sys/nrf9160", "dep:nrf9160-pac"]
 nrf9151 = ["nrf9120"]
 nrf9161 = ["nrf9120"]
