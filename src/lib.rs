@@ -116,6 +116,11 @@ async fn init_with_custom_layout_core(
     ffi::OS_IRQ.store(os_irq, Ordering::Relaxed);
 
     const SHARED_MEMORY_RANGE: Range<u32> = 0x2000_0000..0x2002_0000;
+    const CTRL_SIZE: u32 = if cfg!(feature = "dect") {
+        nrfxlib_sys::NRF_MODEM_DECT_PHY_SHMEM_CTRL_SIZE
+    } else {
+        nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
+    };
 
     if !SHARED_MEMORY_RANGE.contains(&memory_layout.base_address) {
         return Err(Error::BadMemoryLayout);
@@ -123,7 +128,7 @@ async fn init_with_custom_layout_core(
 
     if !SHARED_MEMORY_RANGE.contains(
         &(memory_layout.base_address
-                + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
+                + CTRL_SIZE
                 + memory_layout.tx_area_size
                 + memory_layout.rx_area_size
                 + memory_layout.trace_area_size
@@ -165,21 +170,19 @@ async fn init_with_custom_layout_core(
         shmem: nrfxlib_sys::nrf_modem_shmem_cfg {
             ctrl: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_1 {
                 base: memory_layout.base_address,
-                size: nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE,
+                size: CTRL_SIZE,
             },
             tx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_2 {
-                base: memory_layout.base_address + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE,
+                base: memory_layout.base_address + CTRL_SIZE,
                 size: memory_layout.tx_area_size,
             },
             rx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_3 {
-                base: memory_layout.base_address
-                    + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
-                    + memory_layout.tx_area_size,
+                base: memory_layout.base_address + CTRL_SIZE + memory_layout.tx_area_size,
                 size: memory_layout.rx_area_size,
             },
             trace: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_4 {
                 base: memory_layout.base_address
-                    + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
+                    + CTRL_SIZE
                     + memory_layout.tx_area_size
                     + memory_layout.rx_area_size,
                 size: memory_layout.trace_area_size,
