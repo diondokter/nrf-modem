@@ -1,0 +1,8 @@
+[target.'cfg(all(target_arch = "arm", target_os = "none"))']
+runner = [ "probe-rs", "run", "--chip=nRF9151_xxAA", "--always-print-stacktrace", "--preverify", "--log-format={t} {[{L}]%bold} {s}  {{c} {ff}:{l:1}%dimmed}", "--target-output-file=default.out" ]
+
+[build]
+target = "thumbv8m.main-none-eabihf"
+
+[env]
+DEFMT_LOG = "info"

@@ -102,12 +102,9 @@ pub async fn init(mode: SystemMode, #[cfg(feature = "os-irq")] os_irq: u8) -> Re
     .await
 }
 
-/// Start the NRF Modem library with a manually specified memory layout
-///
-/// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
-/// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
-pub async fn init_with_custom_layout(
-    mode: SystemMode,
+/// Common initialization code between [`init_with_custom_layout`] and
+/// [`init_dect_with_custom_layout`]
+async fn init_with_custom_layout_core(
     memory_layout: MemoryLayout,
     #[cfg(feature = "os-irq")] os_irq: u8,
 ) -> Result<(), Error> {
@@ -119,6 +116,11 @@ pub async fn init_with_custom_layout(
     ffi::OS_IRQ.store(os_irq, Ordering::Relaxed);
 
     const SHARED_MEMORY_RANGE: Range<u32> = 0x2000_0000..0x2002_0000;
+    const CTRL_SIZE: u32 = if cfg!(feature = "dect") {
+        nrfxlib_sys::NRF_MODEM_DECT_PHY_SHMEM_CTRL_SIZE
+    } else {
+        nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
+    };
 
     if !SHARED_MEMORY_RANGE.contains(&memory_layout.base_address) {
         return Err(Error::BadMemoryLayout);
@@ -126,7 +128,7 @@ pub async fn init_with_custom_layout(
 
     if !SHARED_MEMORY_RANGE.contains(
         &(memory_layout.base_address
-                + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
+                + CTRL_SIZE
                 + memory_layout.tx_area_size
                 + memory_layout.rx_area_size
                 + memory_layout.trace_area_size
@@ -168,21 +170,19 @@ pub async fn init_with_custom_layout(
         shmem: nrfxlib_sys::nrf_modem_shmem_cfg {
             ctrl: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_1 {
                 base: memory_layout.base_address,
-                size: nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE,
+                size: CTRL_SIZE,
             },
             tx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_2 {
-                base: memory_layout.base_address + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE,
+                base: memory_layout.base_address + CTRL_SIZE,
                 size: memory_layout.tx_area_size,
             },
             rx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_3 {
-                base: memory_layout.base_address
-                    + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
-                    + memory_layout.tx_area_size,
+                base: memory_layout.base_address + CTRL_SIZE + memory_layout.tx_area_size,
                 size: memory_layout.rx_area_size,
             },
             trace: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_4 {
                 base: memory_layout.base_address
-                    + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
+                    + CTRL_SIZE
                     + memory_layout.tx_area_size
                     + memory_layout.rx_area_size,
                 size: memory_layout.trace_area_size,
@@ -207,6 +207,25 @@ pub async fn init_with_custom_layout(
 
     // OK, let's start the library
     unsafe { nrfxlib_sys::nrf_modem_init(PARAMS.get()) }.into_result()?;
+
+    Ok(())
+}
+
+/// Start the NRF Modem library with a manually specified memory layout
+///
+/// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
+/// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
+pub async fn init_with_custom_layout(
+    mode: SystemMode,
+    memory_layout: MemoryLayout,
+    #[cfg(feature = "os-irq")] os_irq: u8,
+) -> Result<(), Error> {
+    init_with_custom_layout_core(
+        memory_layout,
+        #[cfg(feature = "os-irq")]
+        os_irq,
+    )
+    .await?;
 
     // Start tracing
     #[cfg(feature = "modem-trace")]
@@ -239,6 +258,254 @@ pub async fn init_with_custom_layout(
     mode.setup_psm().await?;
 
     Ok(())
+}
+
+// FIXME: Probably length 1 suffices. And do we need the CS mutext? (actually I think all we do is
+// single-threaded, but then we may need to create the static differently)
+static DECT_EVENTS: embassy_sync::channel::Channel<CriticalSectionRawMutex, DectEventOuter, 4> =
+    embassy_sync::channel::Channel::new();
+
+// FIXME here and in DectEvent: I'd much rather just copy the few bytes around rather than
+// repacking and copying; but that's optimization, and right now I want to get things to run.
+//
+// The whole API is internal anyway.
+#[derive(Debug)]
+struct DectEventOuter {
+    time: u64,
+    event: DectEvent,
+}
+
+#[derive(Debug)]
+enum DectEvent {
+    // Not relaying any fields we don't use yet; in particular, an init error would be instant
+    // panic.
+    Init,
+    Activate,
+    Configure,
+    TimeGet,
+    Completed,
+}
+
+extern "C" fn dect_event(arg: *const nrfxlib_sys::nrf_modem_dect_phy_event) {
+    // SAFETY: Used only in this function
+    let arg = unsafe { &*arg };
+    defmt::trace!("Handler called: id {}, time {}", arg.id, arg.time);
+    let event = match arg.id {
+        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_INIT => {
+            // SAFETY: Checked the discriminator
+            let init = unsafe { &arg.__bindgen_anon_1.init };
+            defmt::trace!(
+                "Init event: err {:#x} ({}), temp {}°C, voltage {}mV, temperature_limit {}°C",
+                // FIXME: Best guess is that they internally use packed enums and we don't
+                init.err,
+                match init.err {
+                    nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_SUCCESS => "success",
+                    nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_ERR_NOT_ALLOWED =>
+                        "not allowed",
+                    nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_ERR_TEMP_HIGH =>
+                        "temp high",
+                    nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_ERR_PROD_LOCK =>
+                        "prod lock",
+                    _ => "unknown",
+                },
+                init.temp,
+                init.voltage,
+                init.temperature_limit
+            );
+            assert_eq!(
+                init.err,
+                nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_SUCCESS
+            );
+            DectEvent::Init
+        }
+        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_CONFIGURE => {
+            // SAFETY: Checked the discriminator
+            let activate = unsafe { &arg.__bindgen_anon_1.activate };
+            assert_eq!(
+                activate.err,
+                nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_SUCCESS
+            );
+            DectEvent::Configure
+        }
+        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_ACTIVATE => {
+            // SAFETY: Checked the discriminator
+            let activate = unsafe { &arg.__bindgen_anon_1.activate };
+            assert_eq!(
+                activate.err,
+                nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_SUCCESS
+            );
+            DectEvent::Activate
+        }
+        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_RSSI => {
+            // SAFETY: Checked the discriminator
+            let rssi = unsafe { &arg.__bindgen_anon_1.rssi };
+            let meas = unsafe { core::slice::from_raw_parts(rssi.meas, rssi.meas_len as _) };
+            defmt::info!(
+                "RSSI handle {} start {} carrier {}; meas:",
+                rssi.handle,
+                rssi.meas_start_time,
+                rssi.carrier,
+            );
+            defmt::info!("{:02x}", meas);
+            // Doesn't go onto the queue, at least not *that* one where someone is waiting for
+            // Completed.
+            return;
+        }
+        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_COMPLETED => {
+            // SAFETY: Checked the discriminator
+            let op = unsafe { &arg.__bindgen_anon_1.op_complete };
+            defmt::trace!(
+                "Op completed: handle {} err {} temp {} voltage {}",
+                op.handle,
+                op.err,
+                op.temp,
+                op.voltage
+            );
+            // Go into different queue?
+            DectEvent::Completed
+        }
+        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_TIME => {
+            // SAFETY: Checked the discriminator
+            let time_get = unsafe { &arg.__bindgen_anon_1.time_get };
+            assert_eq!(
+                time_get.err,
+                nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_SUCCESS,
+                "Never saw this fail"
+            );
+            DectEvent::TimeGet
+        }
+        _ => {
+            return;
+        }
+    };
+    DECT_EVENTS
+        .try_send(DectEventOuter {
+            event,
+            time: arg.time,
+        })
+        .ok()
+        .expect("Queue is managed")
+}
+
+/// Start the NRF Modem library with a manually specified memory layout
+///
+/// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
+/// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
+pub async fn init_dect_with_custom_layout(
+    memory_layout: MemoryLayout,
+    #[cfg(feature = "os-irq")] os_irq: u8,
+) -> Result<DectInitialized, Error> {
+    init_with_custom_layout_core(
+        memory_layout,
+        #[cfg(feature = "os-irq")]
+        os_irq,
+    )
+    .await?;
+
+    defmt::info!("Setting DECT handler");
+
+    unsafe { nrfxlib_sys::nrf_modem_dect_phy_event_handler_set(Some(dect_event)) }.into_result()?;
+
+    defmt::info!("Initializing DECT PHY");
+
+    unsafe { nrfxlib_sys::nrf_modem_dect_phy_init() }.into_result()?;
+
+    defmt::info!("Initialized.");
+
+    let DectEventOuter {
+        event: DectEvent::Init { .. },
+        ..
+    } = DECT_EVENTS.receive().await
+    else {
+        panic!("Sequence violation: Event before Init event");
+    };
+
+    // FIXME take parameters
+    let params = nrfxlib_sys::nrf_modem_dect_phy_config_params {
+        band_group_index: 0,
+        harq_rx_process_count: 4,
+        harq_rx_expiry_time_us: 1000000,
+    };
+    unsafe { nrfxlib_sys::nrf_modem_dect_phy_configure(&params) }.into_result()?;
+    let DectEventOuter {
+        event: DectEvent::Configure,
+        ..
+    } = DECT_EVENTS.receive().await
+    else {
+        panic!("Sequence violation");
+    };
+
+    // FIXME power hog? delay to runtime?
+    let mode = nrfxlib_sys::nrf_modem_dect_phy_radio_mode_NRF_MODEM_DECT_PHY_RADIO_MODE_LOW_LATENCY;
+    unsafe { nrfxlib_sys::nrf_modem_dect_phy_activate(mode) }.into_result()?;
+    let DectEventOuter {
+        event: DectEvent::Activate,
+        ..
+    } = DECT_EVENTS.receive().await
+    else {
+        panic!("Sequence violation");
+    };
+
+    Ok(DectInitialized(core::marker::PhantomData))
+}
+
+// FIXME: Is this Send? Better make it not so for the moment
+//
+// FIXME and because its async ops are queue based, we better make this work on &mut rather than
+// yolo
+//
+// and store that we're in an operation so we can cancel if someone cancels a future
+#[derive(Copy, Clone)]
+pub struct DectInitialized(core::marker::PhantomData<*const ()>);
+
+impl DectInitialized {
+    pub async fn time_get(self) -> Result<u64, Error> {
+        unsafe { nrfxlib_sys::nrf_modem_dect_phy_time_get() }.into_result()?;
+
+        let DectEventOuter {
+            event: DectEvent::TimeGet,
+            time,
+        } = DECT_EVENTS.receive().await
+        else {
+            panic!("Sequence violation");
+        };
+
+        Ok(time)
+    }
+
+    pub async fn rssi(self, carrier: u16) -> Result<(), Error> {
+        // Relevant DECT constant timing parameters are 1 frame = 10ms, each 10ms frame is composed
+        // of 24 slots,
+
+        // - Reporting interval is every 12 or 24 slots. This is consistent with the delta of
+        //   starting times being precisely 691200 (24 slots = 10ms, on a 69.120MHz clock), or
+        //   345600 (12 slots = 5ms).
+        //
+        // - Depending on the reporting interval there are 240 or 120 values, indicating that there
+        //   are 10 readings per slot, which corresponds to lowest number of ODFM symbols (for µ=1)
+        //
+        // - Requesting a duration of N gives 5*N readings. This is given in subslots, which for
+        //   µ=1 is 2 subslots per slot, and thus matches 10 readings per slot, 5 per subslot.
+
+        let params = nrfxlib_sys::nrf_modem_dect_phy_rssi_params {
+            start_time: 0,
+            handle: 1234567,
+            carrier,
+            duration: 48, // in subslots; 1 full report
+            reporting_interval: nrfxlib_sys::nrf_modem_dect_phy_rssi_interval_NRF_MODEM_DECT_PHY_RSSI_INTERVAL_24_SLOTS, // 24 slots = 10ms
+        };
+        unsafe { nrfxlib_sys::nrf_modem_dect_phy_rssi(&params) }.into_result()?;
+
+        let DectEventOuter {
+            event: DectEvent::Completed,
+            ..
+        } = DECT_EVENTS.receive().await
+        else {
+            panic!("Sequence violation");
+        };
+
+        Ok(())
+    }
 }
 
 /// Fetch traces from the modem
