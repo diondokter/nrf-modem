@@ -481,8 +481,9 @@ impl DectInitialized {
         //   starting times being precisely 691200 (24 slots = 10ms, on a 69.120MHz clock), or
         //   345600 (12 slots = 5ms).
         //
-        // - Depending on the reporting interval there are 240 or 120 values, indicating that there
-        //   are 10 readings per slot, which corresponds to lowest number of ODFM symbols (for µ=1)
+        // - Depending on the reporting interval there are 240 or 120 values, so single reading
+        //   takes 2880 clock ticks, or 10 readings per slot, which corresponds to lowest number of
+        //   ODFM symbols (for µ=1).
         //
         // - Requesting a duration of N gives 5*N readings. This is given in subslots, which for
         //   µ=1 is 2 subslots per slot, and thus matches 10 readings per slot, 5 per subslot.
