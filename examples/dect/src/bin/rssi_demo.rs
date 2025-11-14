@@ -84,7 +84,7 @@ async fn main(spawner: Spawner) {
         cp.NVIC.set_priority(pac::Interrupt::IPC, 0 << 5);
     }
 
-    let dect = nrf_modem::init_dect_with_custom_layout(MemoryLayout {
+    let mut dect = nrf_modem::init_dect_with_custom_layout(MemoryLayout {
         base_address: ipc_start,
         tx_area_size: 0x2000,
         rx_area_size: 0x2000,

@@ -451,15 +451,11 @@ pub async fn init_dect_with_custom_layout(
 
 // FIXME: Is this Send? Better make it not so for the moment
 //
-// FIXME and because its async ops are queue based, we better make this work on &mut rather than
-// yolo
-//
 // and store that we're in an operation so we can cancel if someone cancels a future
-#[derive(Copy, Clone)]
 pub struct DectInitialized(core::marker::PhantomData<*const ()>);
 
 impl DectInitialized {
-    pub async fn time_get(self) -> Result<u64, Error> {
+    pub async fn time_get(&mut self) -> Result<u64, Error> {
         unsafe { nrfxlib_sys::nrf_modem_dect_phy_time_get() }.into_result()?;
 
         let DectEventOuter {
@@ -473,7 +469,7 @@ impl DectInitialized {
         Ok(time)
     }
 
-    pub async fn rssi(self, carrier: u16) -> Result<(), Error> {
+    pub async fn rssi(&mut self, carrier: u16) -> Result<(), Error> {
         // Relevant DECT constant timing parameters are 1 frame = 10ms, each 10ms frame is composed
         // of 24 slots,
 
