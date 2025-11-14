@@ -213,6 +213,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "dect-example"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "defmt 1.0.1",
+ "defmt-rtt",
+ "embassy-executor",
+ "embassy-nrf",
+ "embassy-time",
+ "embedded-io",
+ "embedded-io-async",
+ "nrf-modem",
+ "panic-probe",
+ "static_cell",
+ "tinyrlibc",
+]
+
+[[package]]
 name = "defmt"
 version = "0.3.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -261,25 +280,6 @@ checksum = "b2cac3b8a5644a9e02b75085ebad3b6deafdbdbdec04bb25086523828aa4dfd1"
 dependencies = [
  "critical-section",
  "defmt 1.0.1",
-]
-
-[[package]]
-name = "dext-example"
-version = "0.1.0"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "defmt 1.0.1",
- "defmt-rtt",
- "embassy-executor",
- "embassy-nrf",
- "embassy-time",
- "embedded-io",
- "embedded-io-async",
- "nrf-modem",
- "panic-probe",
- "static_cell",
- "tinyrlibc",
 ]
 
 [[package]]
