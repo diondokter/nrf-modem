@@ -4,6 +4,10 @@ import array
 import sys
 import re
 
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
+import numpy as np
+
 perchannel = {}
 abs_min = 0
 abs_max = -128
@@ -31,29 +35,40 @@ for line in open(sys.argv[1]):
 
         perchannel.setdefault(carrier_num, []).append(values)
 
+minband = min(perchannel.keys())
+maxband = max(perchannel.keys())
+
+bands = list(range(minband, maxband + 1))
+percentiles = {q: [None for _ in bands] for q in [1, 5, 10, 25, 50, 75, 90, 95, 99]}
+
+for (i, band) in enumerate(bands):
+    for (q, qp) in percentiles.items():
+        if band in perchannel:
+            qp[i] = np.percentile(perchannel[band], q)
+
 print(f"Over all, {abs_min=} {abs_max=}")
 
-import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
-import numpy as np
-
-fig, ax = plt.subplots()
+fig, (top, bottom) = plt.subplots(2)
 fig.subplots_adjust(bottom=0.2)
 
 alldata = np.array(perchannel[1663])
 
 # FIXME: scale better
-heatmap = ax.imshow(alldata, vmin=-128, vmax=-50)
+heatmap = top.imshow(alldata, vmin=abs_min, vmax=abs_max)
+
+for (q, qd) in percentiles.items():
+    bottom.plot(bands, qd, label=str(q))
+vertical, = bottom.plot([minband, minband], [abs_min, abs_max], label="selected")
+bottom.legend()
 
 ax_slider = fig.add_axes([0.20, 0.1, 0.65, 0.03])
 slider = Slider(
     ax_slider,
     label="Absolute Channel Number",
-    valmin=min(perchannel.keys()),
-    valmax=max(perchannel.keys()),
+    valmin=minband,
+    valmax=maxband,
     valstep=1,
 )
-
 
 def update(val):
     if val in perchannel:
@@ -61,6 +76,7 @@ def update(val):
         heatmap.set_data(perchannel[val])
     else:
         heatmap.set_visible(False)
+    vertical.set(xdata=[val, val])
     fig.canvas.draw_idle()
 
 
