@@ -48,8 +48,13 @@ for (i, band) in enumerate(bands):
 
 print(f"Over all, {abs_min=} {abs_max=}")
 
-fig, (top, bottom) = plt.subplots(2)
-fig.subplots_adjust(bottom=0.2)
+fig = plt.figure()
+
+top = fig.add_subplot(10, 1, (1, 7))
+bottom = fig.add_subplot(10, 1, (8, 9))
+ax_slider = fig.add_subplot(10, 1, 10, sharex=bottom)
+# Works for showing labels left and right on a reasonable full-screen view
+fig.subplots_adjust(top=0.99, bottom=0.01, left=0.05, right=0.95, hspace=0.3, wspace=0.3)
 
 alldata = np.array(perchannel[1663])
 
@@ -61,10 +66,9 @@ for (q, qd) in percentiles.items():
 vertical, = bottom.plot([minband, minband], [abs_min, abs_max], label="selected")
 bottom.legend()
 
-ax_slider = fig.add_axes([0.20, 0.1, 0.65, 0.03])
 slider = Slider(
     ax_slider,
-    label="Absolute Channel Number",
+    label="Absolute\nChannel\nNumber",
     valmin=minband,
     valmax=maxband,
     valstep=1,
