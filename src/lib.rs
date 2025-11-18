@@ -36,6 +36,9 @@ mod udp_socket;
 mod uicc_link;
 pub(crate) mod waker_node_list;
 
+#[cfg(feature = "dect")]
+pub mod dect;
+
 pub use nrfxlib_sys;
 
 pub use at::*;
@@ -104,7 +107,7 @@ pub async fn init(mode: SystemMode, #[cfg(feature = "os-irq")] os_irq: u8) -> Re
 
 /// Common initialization code between [`init_with_custom_layout`] and
 /// [`init_dect_with_custom_layout`]
-async fn init_with_custom_layout_core(
+fn init_with_custom_layout_core(
     memory_layout: MemoryLayout,
     #[cfg(feature = "os-irq")] os_irq: u8,
 ) -> Result<(), Error> {
@@ -224,8 +227,7 @@ pub async fn init_with_custom_layout(
         memory_layout,
         #[cfg(feature = "os-irq")]
         os_irq,
-    )
-    .await?;
+    )?;
 
     // Start tracing
     #[cfg(feature = "modem-trace")]
@@ -260,324 +262,64 @@ pub async fn init_with_custom_layout(
     Ok(())
 }
 
-// FIXME: Probably length 1 suffices. And do we need the CS mutext? (actually I think all we do is
-// single-threaded, but then we may need to create the static differently)
-static DECT_EVENTS: embassy_sync::channel::Channel<CriticalSectionRawMutex, DectEventOuter, 4> =
-    embassy_sync::channel::Channel::new();
-
-// FIXME here and in DectEvent: I'd much rather just copy the few bytes around rather than
-// repacking and copying; but that's optimization, and right now I want to get things to run.
-//
-// The whole API is internal anyway.
-#[derive(Debug)]
-struct DectEventOuter {
-    time: u64,
-    event: DectEvent,
-}
-
-#[derive(Debug)]
-enum DectEvent {
-    // Not relaying any fields we don't use yet; in particular, an init error would be instant
-    // panic.
-    Init,
-    Activate,
-    Configure,
-    TimeGet,
-    Completed,
-}
-
-extern "C" fn dect_event(arg: *const nrfxlib_sys::nrf_modem_dect_phy_event) {
-    // SAFETY: Used only in this function
-    let arg = unsafe { &*arg };
-    defmt::trace!("Handler called: id {}, time {}", arg.id, arg.time);
-    let event = match arg.id {
-        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_INIT => {
-            // SAFETY: Checked the discriminator
-            let init = unsafe { &arg.__bindgen_anon_1.init };
-            defmt::trace!(
-                "Init event: err {:#x} ({}), temp {}°C, voltage {}mV, temperature_limit {}°C",
-                // FIXME: Best guess is that they internally use packed enums and we don't
-                init.err,
-                match init.err {
-                    nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_SUCCESS => "success",
-                    nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_ERR_NOT_ALLOWED =>
-                        "not allowed",
-                    nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_ERR_TEMP_HIGH =>
-                        "temp high",
-                    nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_ERR_PROD_LOCK =>
-                        "prod lock",
-                    _ => "unknown",
-                },
-                init.temp,
-                init.voltage,
-                init.temperature_limit
-            );
-            assert_eq!(
-                init.err,
-                nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_SUCCESS
-            );
-            DectEvent::Init
-        }
-        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_CONFIGURE => {
-            // SAFETY: Checked the discriminator
-            let activate = unsafe { &arg.__bindgen_anon_1.activate };
-            assert_eq!(
-                activate.err,
-                nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_SUCCESS
-            );
-            DectEvent::Configure
-        }
-        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_ACTIVATE => {
-            // SAFETY: Checked the discriminator
-            let activate = unsafe { &arg.__bindgen_anon_1.activate };
-            assert_eq!(
-                activate.err,
-                nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_SUCCESS
-            );
-            DectEvent::Activate
-        }
-        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_RSSI => {
-            // SAFETY: Checked the discriminator
-            let rssi = unsafe { &arg.__bindgen_anon_1.rssi };
-            let meas = unsafe { core::slice::from_raw_parts(rssi.meas, rssi.meas_len as _) };
-            defmt::info!(
-                "RSSI handle {} start {} carrier {}; meas:",
-                rssi.handle,
-                rssi.meas_start_time,
-                rssi.carrier,
-            );
-            defmt::info!("{:02x}", meas);
-            // Doesn't go onto the queue, at least not *that* one where someone is waiting for
-            // Completed.
-            return;
-        }
-        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_COMPLETED => {
-            // SAFETY: Checked the discriminator
-            let op = unsafe { &arg.__bindgen_anon_1.op_complete };
-            defmt::trace!(
-                "Op completed: handle {} err {} temp {} voltage {}",
-                op.handle,
-                op.err,
-                op.temp,
-                op.voltage
-            );
-            // Go into different queue?
-            DectEvent::Completed
-        }
-        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_TIME => {
-            // SAFETY: Checked the discriminator
-            let time_get = unsafe { &arg.__bindgen_anon_1.time_get };
-            assert_eq!(
-                time_get.err,
-                nrfxlib_sys::nrf_modem_dect_phy_err_NRF_MODEM_DECT_PHY_SUCCESS,
-                "Never saw this fail"
-            );
-            DectEvent::TimeGet
-        }
-        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PCC => {
-            let pcc = unsafe { &arg.__bindgen_anon_1.pcc };
-            // SAFETY: It's from IPC so it's not poison; we can later decide whether to look at the
-            // first 5 byte or later 10 byte, and do our own bitfield access.
-            let header = unsafe { &pcc.hdr.type_2 };
-            defmt::warn!("PCC start {} handle {} phy_type {} rssi2 {} snr {} transaction {} hdr st {} hdr {:02x}",
-                pcc.stf_start_time,
-                pcc.handle,
-                pcc.phy_type,
-                pcc.rssi_2,
-                pcc.snr,
-                pcc.transaction_id,
-                pcc.header_status,
-                header
-                );
-            return;
-        }
-        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PCC_ERROR => {
-            defmt::warn!("PCC error, what do?");
-            return;
-        }
-        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PDC => {
-            let pcd = unsafe { &arg.__bindgen_anon_1.pdc };
-            defmt::warn!("PDC handle {} trns {} data {:02x}",
-                pcd.handle,
-                pcd.transaction_id,
-                unsafe { core::slice::from_raw_parts(pcd.data as *const u8, pcd.len) },
-                );
-            return;
-        }
-        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PDC_ERROR => {
-            defmt::warn!("PDC error, what do?");
-            return;
-        }
-        _ => {
-            defmt::warn!("Event had no known handler");
-            return;
-        }
-    };
-    DECT_EVENTS
-        .try_send(DectEventOuter {
-            event,
-            time: arg.time,
-        })
-        .ok()
-        .expect("Queue is managed")
-}
+#[repr(transparent)]
+pub struct DectPhyEventWrapper<'a>(pub &'a nrfxlib_sys::nrf_modem_dect_phy_event);
 
 /// Start the NRF Modem library with a manually specified memory layout
 ///
+/// This is a low-level function. To initialize the modem for DECT for more convenient operation,
+/// use a [`dect::Driver`].
+///
 /// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
 /// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
-pub async fn init_dect_with_custom_layout(
+///
+/// Note that DECT is not completely initialized when the function is returned. Instead, the
+/// initialization start has been called and returned successfully; initialization is complete (and
+/// more steps such as configuring params and activating it) can be taken after the initial "INIT"
+/// event has been sent and processed.
+///
+/// The handler will be called with minimal fanfare, just with a newtype around it that tells that
+/// the struct is fine to to use now (but may later be changed into a still zero-cost but more
+/// powerful wrapper). No attempt is made to take a closure: While we could make the required
+/// casts, the user will be hard-pressed to find a way to store the closure statically without
+/// resorting to TAIT.
+pub fn init_dect_with_custom_layout(
     memory_layout: MemoryLayout,
+    handler: extern "C" fn(DectPhyEventWrapper),
     #[cfg(feature = "os-irq")] os_irq: u8,
-) -> Result<DectInitialized, Error> {
+) -> Result<DectPreinitialized, Error> {
     init_with_custom_layout_core(
         memory_layout,
         #[cfg(feature = "os-irq")]
         os_irq,
-    )
-    .await?;
+    )?;
 
-    defmt::info!("Setting DECT handler");
+    defmt::trace!("Setting DECT handler");
 
-    unsafe { nrfxlib_sys::nrf_modem_dect_phy_event_handler_set(Some(dect_event)) }.into_result()?;
+    // Note that unlike typical C callbacks, this callback setup takes no argument -- if it did, we
+    // might consider passing in the original function and accepting a single-call indicrection
+    // instead of the extern "C" on the handler and the casts.
 
-    defmt::info!("Initializing DECT PHY");
+    // SAFETY: The transmtue cast away the transparent newtype. The safety of
+    // the handler_set function is provided by the underlying API.
+    unsafe {
+        nrfxlib_sys::nrf_modem_dect_phy_event_handler_set(Some(core::mem::transmute(handler)))
+    }
+    .into_result()?;
+
+    defmt::trace!("Initializing DECT PHY");
 
     unsafe { nrfxlib_sys::nrf_modem_dect_phy_init() }.into_result()?;
 
-    defmt::info!("Initialized.");
+    defmt::trace!("Initialization started.");
 
-    let DectEventOuter {
-        event: DectEvent::Init { .. },
-        ..
-    } = DECT_EVENTS.receive().await
-    else {
-        panic!("Sequence violation: Event before Init event");
-    };
-
-    // FIXME take parameters
-    let params = nrfxlib_sys::nrf_modem_dect_phy_config_params {
-        band_group_index: 0,
-        harq_rx_process_count: 4,
-        harq_rx_expiry_time_us: 1000000,
-    };
-    unsafe { nrfxlib_sys::nrf_modem_dect_phy_configure(&params) }.into_result()?;
-    let DectEventOuter {
-        event: DectEvent::Configure,
-        ..
-    } = DECT_EVENTS.receive().await
-    else {
-        panic!("Sequence violation");
-    };
-
-    // FIXME power hog? delay to runtime?
-    let mode = nrfxlib_sys::nrf_modem_dect_phy_radio_mode_NRF_MODEM_DECT_PHY_RADIO_MODE_LOW_LATENCY;
-    unsafe { nrfxlib_sys::nrf_modem_dect_phy_activate(mode) }.into_result()?;
-    let DectEventOuter {
-        event: DectEvent::Activate,
-        ..
-    } = DECT_EVENTS.receive().await
-    else {
-        panic!("Sequence violation");
-    };
-
-    Ok(DectInitialized(core::marker::PhantomData))
+    Ok(DectPreinitialized(core::marker::PhantomData))
 }
 
 // FIXME: Is this Send? Better make it not so for the moment
 //
 // and store that we're in an operation so we can cancel if someone cancels a future
-pub struct DectInitialized(core::marker::PhantomData<*const ()>);
-
-impl DectInitialized {
-    pub async fn time_get(&mut self) -> Result<u64, Error> {
-        unsafe { nrfxlib_sys::nrf_modem_dect_phy_time_get() }.into_result()?;
-
-        let DectEventOuter {
-            event: DectEvent::TimeGet,
-            time,
-        } = DECT_EVENTS.receive().await
-        else {
-            panic!("Sequence violation");
-        };
-
-        Ok(time)
-    }
-
-    pub async fn rssi(&mut self, carrier: u16) -> Result<(), Error> {
-        // Relevant DECT constant timing parameters are 1 frame = 10ms, each 10ms frame is composed
-        // of 24 slots,
-
-        // - Reporting interval is every 12 or 24 slots. This is consistent with the delta of
-        //   starting times being precisely 691200 (24 slots = 10ms, on a 69.120MHz clock), or
-        //   345600 (12 slots = 5ms).
-        //
-        // - Depending on the reporting interval there are 240 or 120 values, so single reading
-        //   takes 2880 clock ticks, or 10 readings per slot, which corresponds to lowest number of
-        //   ODFM symbols (for µ=1).
-        //
-        // - Requesting a duration of N gives 5*N readings. This is given in subslots, which for
-        //   µ=1 is 2 subslots per slot, and thus matches 10 readings per slot, 5 per subslot.
-
-        let params = nrfxlib_sys::nrf_modem_dect_phy_rssi_params {
-            start_time: 0,
-            handle: 1234567,
-            carrier,
-            duration: 48, // in subslots; 1 full report
-            reporting_interval: nrfxlib_sys::nrf_modem_dect_phy_rssi_interval_NRF_MODEM_DECT_PHY_RSSI_INTERVAL_24_SLOTS, // 24 slots = 10ms
-        };
-        unsafe { nrfxlib_sys::nrf_modem_dect_phy_rssi(&params) }.into_result()?;
-
-        let DectEventOuter {
-            event: DectEvent::Completed,
-            ..
-        } = DECT_EVENTS.receive().await
-        else {
-            panic!("Sequence violation");
-        };
-
-        Ok(())
-    }
-
-    pub async fn rx(&mut self) -> Result<(), Error> {
-        let params = unsafe {
-            // FIXME: everything
-            nrfxlib_sys::nrf_modem_dect_phy_rx(&nrfxlib_sys::nrf_modem_dect_phy_rx_params {
-                start_time: 0,
-                handle: 54321,
-                network_id: 0x12345678, // like dect_shell defaults
-                mode: nrfxlib_sys::nrf_modem_dect_phy_rx_mode_NRF_MODEM_DECT_PHY_RX_MODE_SINGLE_SHOT,
-                rssi_interval: nrfxlib_sys::nrf_modem_dect_phy_rssi_interval_NRF_MODEM_DECT_PHY_RSSI_INTERVAL_OFF,
-                link_id: nrfxlib_sys::nrf_modem_dect_phy_link_id {
-                    short_network_id: 0,
-                    short_rd_id: 0,
-                },
-                rssi_level: 0,
-                carrier: 1665, // like dect_shell ping default
-                // ~ 1 second
-                duration: 70000000,
-                filter: nrfxlib_sys::nrf_modem_dect_phy_rx_filter {
-                    short_network_id: 0,
-                    is_short_network_id_used: 0,
-                    receiver_identity: 0,
-                },
-            })
-        }
-        .into_result()?;
-
-        while let evt = DECT_EVENTS.receive().await {
-            match evt {
-                DectEventOuter {
-                    event: DectEvent::Completed,
-                    ..
-                } => break, // FIXME success or error?
-                _ => panic!("Sequence violation"),
-            }
-        }
-
-        Ok(())
-    }
-}
+pub struct DectPreinitialized(core::marker::PhantomData<*const ()>);
 
 /// Fetch traces from the modem
 ///
