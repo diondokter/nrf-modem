@@ -374,7 +374,42 @@ extern "C" fn dect_event(arg: *const nrfxlib_sys::nrf_modem_dect_phy_event) {
             );
             DectEvent::TimeGet
         }
+        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PCC => {
+            let pcc = unsafe { &arg.__bindgen_anon_1.pcc };
+            // SAFETY: It's from IPC so it's not poison; we can later decide whether to look at the
+            // first 5 byte or later 10 byte, and do our own bitfield access.
+            let header = unsafe { &pcc.hdr.type_2 };
+            defmt::warn!("PCC start {} handle {} phy_type {} rssi2 {} snr {} transaction {} hdr st {} hdr {:02x}",
+                pcc.stf_start_time,
+                pcc.handle,
+                pcc.phy_type,
+                pcc.rssi_2,
+                pcc.snr,
+                pcc.transaction_id,
+                pcc.header_status,
+                header
+                );
+            return;
+        }
+        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PCC_ERROR => {
+            defmt::warn!("PCC error, what do?");
+            return;
+        }
+        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PDC => {
+            let pcd = unsafe { &arg.__bindgen_anon_1.pdc };
+            defmt::warn!("PDC handle {} trns {} data {:02x}",
+                pcd.handle,
+                pcd.transaction_id,
+                unsafe { core::slice::from_raw_parts(pcd.data as *const u8, pcd.len) },
+                );
+            return;
+        }
+        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PDC_ERROR => {
+            defmt::warn!("PDC error, what do?");
+            return;
+        }
         _ => {
+            defmt::warn!("Event had no known handler");
             return;
         }
     };
@@ -500,6 +535,45 @@ impl DectInitialized {
         else {
             panic!("Sequence violation");
         };
+
+        Ok(())
+    }
+
+    pub async fn rx(&mut self) -> Result<(), Error> {
+        let params = unsafe {
+            // FIXME: everything
+            nrfxlib_sys::nrf_modem_dect_phy_rx(&nrfxlib_sys::nrf_modem_dect_phy_rx_params {
+                start_time: 0,
+                handle: 54321,
+                network_id: 0x12345678, // like dect_shell defaults
+                mode: nrfxlib_sys::nrf_modem_dect_phy_rx_mode_NRF_MODEM_DECT_PHY_RX_MODE_SINGLE_SHOT,
+                rssi_interval: nrfxlib_sys::nrf_modem_dect_phy_rssi_interval_NRF_MODEM_DECT_PHY_RSSI_INTERVAL_OFF,
+                link_id: nrfxlib_sys::nrf_modem_dect_phy_link_id {
+                    short_network_id: 0,
+                    short_rd_id: 0,
+                },
+                rssi_level: 0,
+                carrier: 1665, // like dect_shell ping default
+                // ~ 1 second
+                duration: 70000000,
+                filter: nrfxlib_sys::nrf_modem_dect_phy_rx_filter {
+                    short_network_id: 0,
+                    is_short_network_id_used: 0,
+                    receiver_identity: 0,
+                },
+            })
+        }
+        .into_result()?;
+
+        while let evt = DECT_EVENTS.receive().await {
+            match evt {
+                DectEventOuter {
+                    event: DectEvent::Completed,
+                    ..
+                } => break, // FIXME success or error?
+                _ => panic!("Sequence violation"),
+            }
+        }
 
         Ok(())
     }

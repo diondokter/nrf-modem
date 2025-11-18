@@ -1,5 +1,5 @@
 use cortex_m::peripheral::NVIC;
-use defmt::debug;
+use defmt::{debug, warn};
 use embassy_nrf::{
     bind_interrupts,
     gpio::{Level, Output, OutputDrive},
