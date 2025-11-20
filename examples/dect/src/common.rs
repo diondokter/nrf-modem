@@ -31,6 +31,33 @@ extern "C" {
 }
 
 pub async fn init() -> (u32, [Output<'static>; 4]) {
+    // Copied from latest embassy-nrf init:
+    let mut needs_reset = false;
+    // Workaround used in the nrf mdk: file system_nrf91.c , function SystemInit(), after `#if !defined(NRF_SKIP_UICR_HFXO_WORKAROUND)`
+    let uicr = embassy_nrf::pac::UICR_S;
+    let hfxocnt = uicr.hfxocnt().read().hfxocnt().to_bits();
+    let hfxosrc = uicr.hfxosrc().read().hfxosrc().to_bits();
+    const UICR_HFXOSRC: *mut u32 = 0x00FF801C as *mut u32;
+    const UICR_HFXOCNT: *mut u32 = 0x00FF8020 as *mut u32;
+    if hfxosrc == 1 {
+        unsafe {
+            let _ = uicr_helpers::uicr_write(UICR_HFXOSRC, 0);
+        }
+        needs_reset = true;
+    }
+    if hfxocnt == 255 {
+        unsafe {
+            let _ = uicr_helpers::uicr_write(UICR_HFXOCNT, 32);
+        }
+        needs_reset = true;
+    }
+    if needs_reset {
+        panic!(
+            "UICR bits were gravely misconfigure. Fixed, but this requires a reboot; you may want to run again with --preverify."
+        );
+    }
+    // end copied
+
     let p = embassy_nrf::init(Default::default());
 
     fn configure_modem_non_secure() -> u32 {
@@ -82,4 +109,37 @@ pub async fn init() -> (u32, [Output<'static>; 4]) {
     ];
 
     (ipc_start, leds)
+}
+
+// See top of the init function: adapted from embassy-nrf
+mod uicr_helpers {
+    pub unsafe fn uicr_write(address: *mut u32, value: u32) {
+        uicr_write_masked(address, value, 0xFFFF_FFFF)
+    }
+
+    pub unsafe fn uicr_write_masked(address: *mut u32, value: u32, mask: u32) {
+        let curr_val = address.read_volatile();
+        if curr_val & mask == value & mask {
+            return;
+        }
+
+        // We can only change `1` bits to `0` bits.
+        if curr_val & value & mask != value & mask {
+            panic!("Can't write");
+        }
+
+        // Nrf9151 errata 7, need to disable interrups + use DSB https://docs.nordicsemi.com/bundle/errata_nRF9151_Rev2/page/ERR/nRF9151/Rev2/latest/anomaly_151_7.html
+        cortex_m::interrupt::free(|_cs| {
+            let nvmc = embassy_nrf::pac::NVMC;
+
+            nvmc.config()
+                .write(|w| w.set_wen(embassy_nrf::pac::nvmc::vals::Wen::WEN));
+            while !nvmc.ready().read().ready() {}
+            address.write_volatile(value | !mask);
+            cortex_m::asm::dsb();
+            while !nvmc.ready().read().ready() {}
+            nvmc.config().write(|_| {});
+            while !nvmc.ready().read().ready() {}
+        });
+    }
 }
