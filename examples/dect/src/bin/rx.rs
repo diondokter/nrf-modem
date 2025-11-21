@@ -192,38 +192,24 @@ async fn main(spawner: Spawner) {
     let mut dect = nrf_modem::dect::DectPhy::new(dect_preinit).await.unwrap();
 
     for _ in 0..100 {
-        let received = dect
+        if let Some(received) = dect
             .rx()
             .await
-            .expect("Receive operation failed as a whole");
-        match &*received {
-            (None, None) => (),
-            (Some(Ok((start, header))), Some(Ok(data))) => {
+            .expect("Receive operation failed as a whole") {
+            let start = received.pcc_time();
+            let pcc = received.pcc();
+            let pdc = received.pdc();
+            if let (Ok(start), Ok(pcc), Ok(pdc)) = (start, pcc, pdc) {
                 info!(
                     "Received at {}: {:?} {:?}",
                     start,
-                    header.as_slice(),
-                    data.as_slice()
+                    pcc,
+                    pdc
                 );
-                log_header(header);
-                log_data(data);
-            }
-            received => {
-                warn!("Received partial transmission:");
-                warn!(
-                    "    PCC: {:?}",
-                    received
-                        .0
-                        .as_ref()
-                        .map(|r| r.as_ref().map(|(t, hv)| (t, hv.as_slice())))
-                );
-                warn!(
-                    "    PDC: {:?}",
-                    received
-                        .1
-                        .as_ref()
-                        .map(|r| r.as_ref().map(|hv| hv.as_slice()))
-                );
+                log_header(pcc);
+                log_data(pdc);
+            } else {
+                warn!("Received partial transmission: {:?} {:?} {:?}", start, pcc, pdc);
             }
         }
 

@@ -8,43 +8,67 @@
 //! independently (using [`nrfxlib_sys`] and working off [`crate::init_dect_with_custom_layout`]).
 
 use crate::error::{Error, ErrorSource};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
+use embassy_sync::{
+    blocking_mutex::raw::CriticalSectionRawMutex,
+    mutex::{Mutex, MutexGuard},
+};
 
-// FIXME: Probably length 1 suffices. And do we need the CS mutext? (actually I think all we do is
-// single-threaded, but then we may need to create the static differently)
+// FIXME: What's a good length? Probably events can pile up, like "here's the last data and by the
+// way the transaction is now complete". And do we need the CS mutex?
 static DECT_EVENTS: embassy_sync::channel::Channel<CriticalSectionRawMutex, DectEventOuter, 4> =
     embassy_sync::channel::Channel::new();
 
-#[derive(Debug, defmt::Format)]
+#[derive(Debug, defmt::Format, Copy, Clone)]
 #[non_exhaustive]
 pub enum PccError {
     CrcError,
     UnexpectedEventDetails,
 }
 
-#[derive(Debug, defmt::Format)]
+#[derive(Debug, defmt::Format, Copy, Clone)]
 #[non_exhaustive]
 pub enum PdcError {
     CrcError,
-    UnexpectedEventDetails,
+    OutOfSpace,
+    PccError(PccError),
 }
 
-/// PCC and PDC data
-// We won't do it this way for long, but it's easy for now.
-//
-// In particular,
-// * what's a good size here?
-// * we don't actually need a mutex that can be awaitable, merely somethign with try_lock.
-// * can we just not use the options and rely on PCC and PDC events to fire before Completed fires?
-static RECVBUF: Mutex<
-    CriticalSectionRawMutex,
-    (
-        // PCC
-        Option<Result<(u64, heapless::Vec<u8, 10>), PccError>>,
-        // PDC
-        Option<Result<heapless::Vec<u8, 1024>, PdcError>>,
-    ),
-> = Mutex::new((None, None));
+/// Result of a single receive operation.
+///
+/// This keeps a lock on the receive buffer, and must therefore be dropped before the next attempt
+/// to perform any other operation.
+pub struct RecvResult<'a>(
+    MutexGuard<'static, CriticalSectionRawMutex, heapless::Vec<u8, 2400>>,
+    Result<((u64, usize), Result<usize, PdcError>), PccError>,
+    // This ensures that a .recv() result is used before the next attempt to receive something (as
+    // that would panic around locking RECV_BUF).
+    core::marker::PhantomData<&'a mut ()>,
+);
+
+impl<'a> RecvResult<'a> {
+    pub fn pcc_time(&self) -> Result<u64, PccError> {
+        Ok(self.1?.0.0)
+    }
+    pub fn pcc(&self) -> Result<&[u8], PccError> {
+        Ok(&self.0[..self.1?.0.1])
+    }
+    pub fn pdc(&self) -> Result<&[u8], PdcError> {
+        let pcc_and_rest = self.1.map_err(PdcError::PccError)?;
+        let start = pcc_and_rest.0.1;
+        let len = pcc_and_rest.1?;
+        self.0.get(start..start + len)
+            .ok_or(PdcError::OutOfSpace)
+    }
+}
+
+/// Kind of a bump allocator for data that doesn't fit in the events.
+///
+/// Might later be turned into a ring buffer if any methods support stream-processing multiple
+/// events.
+///
+/// Sized 2400 somewhat arbitrarily because it could take 10 runs of RSSI data.
+static RECVBUF: Mutex<CriticalSectionRawMutex, heapless::Vec<u8, 2400>> =
+    Mutex::new(heapless::Vec::new());
 
 // FIXME here and in DectEvent: I'd much rather just copy the few bytes around rather than
 // repacking and copying; but that's optimization, and right now I want to get things to run.
@@ -65,6 +89,17 @@ enum DectEvent {
     Configure,
     TimeGet,
     Completed,
+    /// This is both the EVT_PCC_ERROR that really is just CRC error, or failures during processing
+    /// of a PCC.
+    PccError(PccError),
+    /// PCC with time and length inside recvbuf
+    // If we start doing multiple recvs, we can't just upgrade this to a range here and in PCD,
+    // also not to Option<Range> in case it didn't fit, but need to stream it out through a ring
+    // buffer with process-on-the-fly anyway.
+    Pcc(u64, usize),
+    PdcError,
+    /// Length inside recvbuf
+    Pdc(usize),
 }
 
 // FIXME: This is only pub while the DectPhy object doesn't have an init that calls the low-level
@@ -157,50 +192,41 @@ pub extern "C" fn dect_event(arg: super::DectPhyEventWrapper<'_>) {
             );
             DectEvent::TimeGet
         }
-        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PCC => {
+        nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PCC => 'eventresult: {
             // SAFETY: Checked the discriminator
             let pcc = unsafe { &arg.__bindgen_anon_1.pcc };
-            let result = (|| {
-                let header_len = match pcc.phy_type {
-                    0 => 5,
-                    1 => 10,
-                    _ => return Err(PccError::UnexpectedEventDetails),
-                };
-                // SAFETY: As per struct details.
-                // (Easier to pass this on as bytes and do our own field access later)
-                let header = &unsafe { pcc.hdr.type_2 }[..header_len];
-                defmt::trace!("PCC start {} handle {} phy_type {} rssi2 {} snr {} transaction {} hdr st {} hdr {:02x}",
-                    pcc.stf_start_time,
-                    pcc.handle,
-                    pcc.phy_type,
-                    pcc.rssi_2,
-                    pcc.snr,
-                    pcc.transaction_id,
-                    pcc.header_status,
-                    header
-                    );
-                // FIXME: Avoid duplication on stack
-                let mut recvbuf = heapless::Vec::new();
-                recvbuf
-                    .extend_from_slice(header)
-                    .expect("Length is limited");
-                Ok((pcc.stf_start_time, recvbuf))
-            })();
-            RECVBUF
+
+            let header_len = match pcc.phy_type {
+                0 => 5,
+                1 => 10,
+                _ => break 'eventresult DectEvent::PccError(PccError::UnexpectedEventDetails),
+            };
+            // SAFETY: As per struct details.
+            // (Easier to pass this on as bytes and do our own field access later)
+            let header = &unsafe { pcc.hdr.type_2 }[..header_len];
+            defmt::trace!("PCC start {} handle {} phy_type {} rssi2 {} snr {} transaction {} hdr st {} hdr {:02x}",
+                pcc.stf_start_time,
+                pcc.handle,
+                pcc.phy_type,
+                pcc.rssi_2,
+                pcc.snr,
+                pcc.transaction_id,
+                pcc.header_status,
+                header
+                );
+
+            let mut recvbuf = RECVBUF
                 .try_lock()
-                .expect("Was checked when doing a request")
-                .0 = Some(result);
-            return;
+                .expect("Was checked when doing a request");
+
+            assert_eq!(recvbuf.len(), 0);
+            recvbuf
+                .extend_from_slice(header)
+                .expect("Length is small enough to always fit");
+            DectEvent::Pcc(pcc.stf_start_time, header.len())
         }
         nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PCC_ERROR => {
-            // SAFETY: Checked the discriminator
-            // let pcc_error = unsafe { &arg.__bindgen_anon_1.pcc_crc_err };
-            // FIXME: Do we need ny data from this?
-            RECVBUF
-                .try_lock()
-                .expect("Was checked when doing a request")
-                .0 = Some(Err(PccError::CrcError));
-            return;
+            DectEvent::PccError(PccError::CrcError)
         }
         nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PDC => {
             // SAFETY: Checked the discriminator
@@ -213,27 +239,19 @@ pub extern "C" fn dect_event(arg: super::DectPhyEventWrapper<'_>) {
                 pdc.transaction_id,
                 data,
             );
-            // FIXME: Avoid duplication on stack
-            let mut recvbuf = heapless::Vec::new();
-            recvbuf
-                .extend_from_slice(&data)
-                // FIXME: Rather than doing proper error handling here, let's fix the buffer type.
-                .expect("Length is limited");
-            RECVBUF
+
+            let mut recvbuf = RECVBUF
                 .try_lock()
-                .expect("Was checked when doing a request")
-                .1 = Some(Ok(recvbuf));
-            return;
+                .expect("Was checked when doing a request");
+
+            // Either it fits or it doesn't; the user will see when trying to access the buffer up
+            // to it.
+            // FIXME: Does it makes ense to store it as far as possible?
+            let _ = recvbuf.extend_from_slice(data);
+            DectEvent::Pdc(data.len())
         }
         nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PDC_ERROR => {
-            // SAFETY: Checked the discriminator
-            // let pdc_error = unsafe { &arg.__bindgen_anon_1.pdc_crc_err };
-            // FIXME: Do we need ny data from this?
-            RECVBUF
-                .try_lock()
-                .expect("Was checked when doing a request")
-                .1 = Some(Err(PdcError::CrcError));
-            return;
+            DectEvent::PdcError
         }
         _ => {
             defmt::warn!("Event had no known handler");
@@ -349,24 +367,17 @@ impl DectPhy {
     pub async fn rx(
         &mut self,
     ) -> Result<
-        impl core::ops::Deref<
-            Target = (
-                Option<Result<(u64, heapless::Vec<u8, 10>), PccError>>,
-                Option<Result<heapless::Vec<u8, 1024>, PdcError>>,
-            ),
-        >,
+        Option<RecvResult<'_>>,
         Error,
     > {
         // Dual purpose:
-        // * Clear out message (the COMPLETE event otherwise won't tell us whether anything was
-        //   received or not)
+        // * Clear out message
         // * Debug tool: This ensures that the panic won't happen in the ISR. (That'd be kind'a fine,
         //   but it's easier debugging this way).
         let mut recvbuf = RECVBUF.try_lock().expect(
             "Buffer in use; unsafe construction of DectPhy, or pending future was dropped.",
         );
-        recvbuf.0 = None;
-        recvbuf.1 = None;
+        recvbuf.clear();
         drop(recvbuf);
 
         let params = unsafe {
@@ -394,15 +405,48 @@ impl DectPhy {
         }
         .into_result()?;
 
+        let mut pcc = None;
+        let mut pdc = None;
+
         loop {
-            match DECT_EVENTS.receive().await {
-                DectEventOuter {
-                    event: DectEvent::Completed,
-                    ..
-                } => return Ok(RECVBUF.try_lock().expect("Was checked before")),
+            match DECT_EVENTS.receive().await.event {
+                DectEvent::Pcc(start, pcc_len) => {
+                    debug_assert!(pcc.is_none(), "Sequence violation");
+                    pcc = Some(Ok((start, pcc_len)));
+                }
+                DectEvent::PccError(e) => {
+                    debug_assert!(pcc.is_none(), "Sequence violation");
+                    pcc = Some(Err(e));
+                }
+                DectEvent::Pdc(pcd_len) => {
+                    debug_assert!(pdc.is_none(), "Sequence violation");
+                    pdc = Some(Ok(pcd_len));
+                }
+                DectEvent::PdcError => {
+                    debug_assert!(pdc.is_none(), "Sequence violation");
+                    pdc = Some(Err(PdcError::CrcError));
+                }
+                DectEvent::Completed => {
+                    break;
+                }
                 _ => panic!("Sequence violation"),
             }
         }
+
+        let result = match (pcc, pdc) {
+            (None, None) => return Ok(None),
+            (Some(Err(e)), None) => Err(e),
+            (Some(Ok(pcc)), Some(pdc)) => Ok((pcc, pdc)),
+            _ => panic!("Sequence violation"),
+        };
+
+        Ok(Some(RecvResult(
+            RECVBUF
+                .try_lock()
+                .expect("Was checked before, and ISR users release this before returning"),
+            result,
+            core::marker::PhantomData,
+        )))
     }
 
     pub async fn tx(&mut self, pcc: &[u8], pdc: &[u8]) -> Result<(), Error> {
