@@ -1,12 +1,50 @@
 //! High-level wrappers around the DECT PHY.
+//!
+//! This implementation does *not* try to be friendly to highly concurrent operations; rather, it
+//! aims for ease of use and getting things done.
+//!
+//! More elaborate versions (e.g. supporting concurrently enqueued actions using a preconfigured
+//! list of handle slots, or more actions inside the interrupt) might be added later, or
+//! independently (using [`nrfxlib_sys`] and working off [`crate::init_dect_with_custom_layout`]).
 
 use crate::error::{Error, ErrorSource};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 
 // FIXME: Probably length 1 suffices. And do we need the CS mutext? (actually I think all we do is
 // single-threaded, but then we may need to create the static differently)
 static DECT_EVENTS: embassy_sync::channel::Channel<CriticalSectionRawMutex, DectEventOuter, 4> =
     embassy_sync::channel::Channel::new();
+
+#[derive(Debug, defmt::Format)]
+#[non_exhaustive]
+pub enum PccError {
+    CrcError,
+    UnexpectedEventDetails,
+}
+
+#[derive(Debug, defmt::Format)]
+#[non_exhaustive]
+pub enum PdcError {
+    CrcError,
+    UnexpectedEventDetails,
+}
+
+/// PCC and PDC data
+// We won't do it this way for long, but it's easy for now.
+//
+// In particular,
+// * what's a good size here?
+// * we don't actually need a mutex that can be awaitable, merely somethign with try_lock.
+// * can we just not use the options and rely on PCC and PDC events to fire before Completed fires?
+static RECVBUF: Mutex<
+    CriticalSectionRawMutex,
+    (
+        // PCC
+        Option<Result<(u64, heapless::Vec<u8, 10>), PccError>>,
+        // PDC
+        Option<Result<heapless::Vec<u8, 1024>, PdcError>>,
+    ),
+> = Mutex::new((None, None));
 
 // FIXME here and in DectEvent: I'd much rather just copy the few bytes around rather than
 // repacking and copying; but that's optimization, and right now I want to get things to run.
@@ -120,38 +158,81 @@ pub extern "C" fn dect_event(arg: super::DectPhyEventWrapper<'_>) {
             DectEvent::TimeGet
         }
         nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PCC => {
+            // SAFETY: Checked the discriminator
             let pcc = unsafe { &arg.__bindgen_anon_1.pcc };
-            // SAFETY: It's from IPC so it's not poison; we can later decide whether to look at the
-            // first 5 byte or later 10 byte, and do our own bitfield access.
-            let header = unsafe { &pcc.hdr.type_2 };
-            defmt::warn!("PCC start {} handle {} phy_type {} rssi2 {} snr {} transaction {} hdr st {} hdr {:02x}",
-                pcc.stf_start_time,
-                pcc.handle,
-                pcc.phy_type,
-                pcc.rssi_2,
-                pcc.snr,
-                pcc.transaction_id,
-                pcc.header_status,
-                header
-                );
+            let result = (|| {
+                let header_len = match pcc.phy_type {
+                    0 => 5,
+                    1 => 10,
+                    _ => return Err(PccError::UnexpectedEventDetails),
+                };
+                // SAFETY: As per struct details.
+                // (Easier to pass this on as bytes and do our own field access later)
+                let header = &unsafe { pcc.hdr.type_2 }[..header_len];
+                defmt::trace!("PCC start {} handle {} phy_type {} rssi2 {} snr {} transaction {} hdr st {} hdr {:02x}",
+                    pcc.stf_start_time,
+                    pcc.handle,
+                    pcc.phy_type,
+                    pcc.rssi_2,
+                    pcc.snr,
+                    pcc.transaction_id,
+                    pcc.header_status,
+                    header
+                    );
+                // FIXME: Avoid duplication on stack
+                let mut recvbuf = heapless::Vec::new();
+                recvbuf
+                    .extend_from_slice(header)
+                    .expect("Length is limited");
+                Ok((pcc.stf_start_time, recvbuf))
+            })();
+            RECVBUF
+                .try_lock()
+                .expect("Was checked when doing a request")
+                .0 = Some(result);
             return;
         }
         nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PCC_ERROR => {
-            defmt::warn!("PCC error, what do?");
+            // SAFETY: Checked the discriminator
+            // let pcc_error = unsafe { &arg.__bindgen_anon_1.pcc_crc_err };
+            // FIXME: Do we need ny data from this?
+            RECVBUF
+                .try_lock()
+                .expect("Was checked when doing a request")
+                .0 = Some(Err(PccError::CrcError));
             return;
         }
         nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PDC => {
-            let pcd = unsafe { &arg.__bindgen_anon_1.pdc };
-            defmt::warn!(
+            // SAFETY: Checked the discriminator
+            let pdc = unsafe { &arg.__bindgen_anon_1.pdc };
+            // SAFETY: Implied by the C API
+            let data = unsafe { core::slice::from_raw_parts(pdc.data as *const u8, pdc.len) };
+            defmt::trace!(
                 "PDC handle {} trns {} data {:02x}",
-                pcd.handle,
-                pcd.transaction_id,
-                unsafe { core::slice::from_raw_parts(pcd.data as *const u8, pcd.len) },
+                pdc.handle,
+                pdc.transaction_id,
+                data,
             );
+            // FIXME: Avoid duplication on stack
+            let mut recvbuf = heapless::Vec::new();
+            recvbuf
+                .extend_from_slice(&data)
+                // FIXME: Rather than doing proper error handling here, let's fix the buffer type.
+                .expect("Length is limited");
+            RECVBUF
+                .try_lock()
+                .expect("Was checked when doing a request")
+                .1 = Some(Ok(recvbuf));
             return;
         }
         nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_PDC_ERROR => {
-            defmt::warn!("PDC error, what do?");
+            // SAFETY: Checked the discriminator
+            // let pdc_error = unsafe { &arg.__bindgen_anon_1.pdc_crc_err };
+            // FIXME: Do we need ny data from this?
+            RECVBUF
+                .try_lock()
+                .expect("Was checked when doing a request")
+                .1 = Some(Err(PdcError::CrcError));
             return;
         }
         _ => {
@@ -264,7 +345,30 @@ impl DectPhy {
         Ok(())
     }
 
-    pub async fn rx(&mut self) -> Result<(), Error> {
+    // FIXME: heapless is not great for signature yet
+    pub async fn rx(
+        &mut self,
+    ) -> Result<
+        impl core::ops::Deref<
+            Target = (
+                Option<Result<(u64, heapless::Vec<u8, 10>), PccError>>,
+                Option<Result<heapless::Vec<u8, 1024>, PdcError>>,
+            ),
+        >,
+        Error,
+    > {
+        // Dual purpose:
+        // * Clear out message (the COMPLETE event otherwise won't tell us whether anything was
+        //   received or not)
+        // * Debug tool: This ensures that the panic won't happen in the ISR. (That'd be kind'a fine,
+        //   but it's easier debugging this way).
+        let mut recvbuf = RECVBUF.try_lock().expect(
+            "Buffer in use; unsafe construction of DectPhy, or pending future was dropped.",
+        );
+        recvbuf.0 = None;
+        recvbuf.1 = None;
+        drop(recvbuf);
+
         let params = unsafe {
             // FIXME: everything
             nrfxlib_sys::nrf_modem_dect_phy_rx(&nrfxlib_sys::nrf_modem_dect_phy_rx_params {
@@ -290,16 +394,14 @@ impl DectPhy {
         }
         .into_result()?;
 
-        while let evt = DECT_EVENTS.receive().await {
-            match evt {
+        loop {
+            match DECT_EVENTS.receive().await {
                 DectEventOuter {
                     event: DectEvent::Completed,
                     ..
-                } => break, // FIXME success or error?
+                } => return Ok(RECVBUF.try_lock().expect("Was checked before")),
                 _ => panic!("Sequence violation"),
             }
         }
-
-        Ok(())
     }
 }

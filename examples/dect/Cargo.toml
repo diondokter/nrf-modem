@@ -44,6 +44,7 @@ nrf-modem = { version = "0.9.0", path = "../../", features = [
   "dect",
   "modem-log",
 ] }
+ts-103-636-numbers = { git = "https://github.com/ariel-os/hophop", version = "0.0.0", features = ["defmt"] }
 
 [profile.release]
 debug = 2

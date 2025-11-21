@@ -229,6 +229,7 @@ dependencies = [
  "panic-probe",
  "static_cell",
  "tinyrlibc",
+ "ts-103-636-numbers",
 ]
 
 [[package]]
@@ -773,6 +774,7 @@ dependencies = [
  "embedded-io-async",
  "futures",
  "grounded",
+ "heapless",
  "linked_list_allocator",
  "nrf9120-pac",
  "nrfxlib-sys",
@@ -1075,6 +1077,14 @@ checksum = "5d07d242693682e46801cb0186c583858bce022f698401b3f04bbd729c9a87e7"
 dependencies = [
  "cc",
  "portable-atomic",
+]
+
+[[package]]
+name = "ts-103-636-numbers"
+version = "0.0.0"
+source = "git+https://github.com/ariel-os/hophop#6060851db07c09710c1d532cb6e72a58864b446d"
+dependencies = [
+ "defmt 1.0.1",
 ]
 
 [[package]]
