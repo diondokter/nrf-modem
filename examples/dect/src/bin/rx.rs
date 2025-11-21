@@ -142,7 +142,7 @@ fn log_data(data: &[u8]) {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let (ipc_start, leds) = init().await;
+    let (ipc_start, _leds, _buttons) = init().await;
 
     let dect_preinit = nrf_modem::init_dect_with_custom_layout(
         MemoryLayout {

@@ -10,7 +10,7 @@ use dect_example::common::*;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let (ipc_start, leds) = init().await;
+    let (ipc_start, _leds, _buttons) = init().await;
 
     let mut dect = nrf_modem::init_dect_with_custom_layout(MemoryLayout {
         base_address: ipc_start,

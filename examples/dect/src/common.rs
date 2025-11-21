@@ -2,7 +2,7 @@ use cortex_m::peripheral::NVIC;
 use defmt::{debug, warn};
 use embassy_nrf::{
     bind_interrupts,
-    gpio::{Level, Output, OutputDrive},
+    gpio::{Level, Output, OutputDrive, Input, Pull},
     interrupt::typelevel,
     pac,
 };
@@ -30,7 +30,7 @@ extern "C" {
     static __end_ipc: u8;
 }
 
-pub async fn init() -> (u32, [Output<'static>; 4]) {
+pub async fn init() -> (u32, [Output<'static>; 4], [Input<'static>; 4]) {
     // Copied from latest embassy-nrf init:
     let mut needs_reset = false;
     // Workaround used in the nrf mdk: file system_nrf91.c , function SystemInit(), after `#if !defined(NRF_SKIP_UICR_HFXO_WORKAROUND)`
@@ -100,15 +100,21 @@ pub async fn init() -> (u32, [Output<'static>; 4]) {
         cp.NVIC.set_priority(pac::Interrupt::IPC, 0 << 5);
     }
 
-    // nRF9151 LED pins
+    // nRF9151 LED and button pins
     let leds = [
         Output::new(p.P0_00, Level::Low, OutputDrive::Standard),
         Output::new(p.P0_01, Level::Low, OutputDrive::Standard),
         Output::new(p.P0_04, Level::Low, OutputDrive::Standard),
         Output::new(p.P0_05, Level::Low, OutputDrive::Standard),
     ];
+    let buttons = [
+        Input::new(p.P0_08, Pull::Up),
+        Input::new(p.P0_09, Pull::Up),
+        Input::new(p.P0_18, Pull::Up),
+        Input::new(p.P0_19, Pull::Up),
+    ];
 
-    (ipc_start, leds)
+    (ipc_start, leds, buttons)
 }
 
 // See top of the init function: adapted from embassy-nrf
