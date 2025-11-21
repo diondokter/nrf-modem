@@ -405,14 +405,7 @@ impl DectPhy {
         }
     }
 
-    pub async fn tx(
-        &mut self,
-        pcc: &[u8],
-        pdc: &[u8],
-    ) -> Result<
-        (),
-        Error,
-    > {
+    pub async fn tx(&mut self, pcc: &[u8], pdc: &[u8]) -> Result<(), Error> {
         let phy_type = match pcc.len() {
             5 => 0,
             10 => 1,
@@ -427,8 +420,8 @@ impl DectPhy {
                 network_id: 0x12345678, // like dect_shell defaults
                 phy_type,
                 lbt_rssi_threshold_max: 0, // see below
-                carrier: 1665, // like dect_shell default
-                lbt_period: 0, // BIG FIXME
+                carrier: 1665,             // like dect_shell default
+                lbt_period: 0,             // BIG FIXME
                 // The object may be smaller than expected for phy_header, but then, phy_type tells
                 // to only access the smaller struct fields anyway.
                 phy_header: pcc.as_ptr() as _,

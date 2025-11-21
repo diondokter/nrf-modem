@@ -94,11 +94,7 @@ fn log_data(data: &[u8]) {
             let seqno = (data[1] as u16 & 0x0f) << 8 | (data[2] as u16);
 
             let transmitter = &data[4..8];
-            info!(
-                "DATA MAC PDU details: reset {}, seqno {}",
-                reset,
-                seqno
-            );
+            info!("DATA MAC PDU details: reset {}, seqno {}", reset, seqno);
             3
         }
         numbers::mac_pdu::header_type::BEACON => {
@@ -118,11 +114,7 @@ fn log_data(data: &[u8]) {
             let transmitter = &data[7..11];
             info!(
                 "Unicast details: reset {}, mac_sequence {}, seqno {}, to {} from {}",
-                reset,
-                mac_sequence,
-                seqno,
-                receiver,
-                transmitter,
+                reset, mac_sequence, seqno, receiver, transmitter,
             );
             11
         }
@@ -132,9 +124,7 @@ fn log_data(data: &[u8]) {
             let transmitter = &data[3..7];
             info!(
                 "RD Broadcast details: reset {}, seqno {}, from {}",
-                reset,
-                seqno,
-                transmitter,
+                reset, seqno, transmitter,
             );
             7
         }

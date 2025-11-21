@@ -2,7 +2,7 @@ use cortex_m::peripheral::NVIC;
 use defmt::{debug, warn};
 use embassy_nrf::{
     bind_interrupts,
-    gpio::{Level, Output, OutputDrive, Input, Pull},
+    gpio::{Input, Level, Output, OutputDrive, Pull},
     interrupt::typelevel,
     pac,
 };
