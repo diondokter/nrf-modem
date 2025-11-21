@@ -89,6 +89,18 @@ fn log_data(data: &[u8]) {
         mac_sec_version, mac_hdr_type, mac_hdr_type_name
     );
     let end_common_header = match mac_hdr_type {
+        numbers::mac_pdu::header_type::DATA_MAC_PDU => {
+            let reset = (data[1] & 0x10) >> 4;
+            let seqno = (data[1] as u16 & 0x0f) << 8 | (data[2] as u16);
+
+            let transmitter = &data[4..8];
+            info!(
+                "DATA MAC PDU details: reset {}, seqno {}",
+                reset,
+                seqno
+            );
+            3
+        }
         numbers::mac_pdu::header_type::BEACON => {
             let long_nid = &data[1..4];
             let transmitter = &data[4..8];
@@ -97,6 +109,34 @@ fn log_data(data: &[u8]) {
                 long_nid, transmitter
             );
             8
+        }
+        numbers::mac_pdu::header_type::UNICAST => {
+            let reset = (data[1] & 0x10) >> 4;
+            let mac_sequence = data[1] & 0x0f;
+            let seqno = data[2];
+            let receiver = &data[3..7];
+            let transmitter = &data[7..11];
+            info!(
+                "Unicast details: reset {}, mac_sequence {}, seqno {}, to {} from {}",
+                reset,
+                mac_sequence,
+                seqno,
+                receiver,
+                transmitter,
+            );
+            11
+        }
+        numbers::mac_pdu::header_type::RD_BROADCAST => {
+            let reset = (data[1] & 0x10) >> 4;
+            let seqno = (data[1] as u16 & 0x0f) << 8 | (data[2] as u16);
+            let transmitter = &data[3..7];
+            info!(
+                "RD Broadcast details: reset {}, seqno {}, from {}",
+                reset,
+                seqno,
+                transmitter,
+            );
+            7
         }
         _ => {
             info!("Unknown common header, can not decode further");
@@ -111,6 +151,7 @@ fn log_data(data: &[u8]) {
     while !tail.is_empty() {
         let mac_ext = tail[0] >> 6;
         let ie_type = tail[0] & 0x3f;
+        let ie_type = numbers::mac_ie::IEType6bit::try_from(ie_type).unwrap();
         match mac_ext {
             numbers::mac_pdu::mux_ext::NO_LENGTH_FIELD => {
                 // No length
@@ -118,21 +159,24 @@ fn log_data(data: &[u8]) {
                 return;
             }
             numbers::mac_pdu::mux_ext::LENGTH_8BIT => {
-                // 8-bit length
                 let len = tail[1];
                 let end = 2 + len as usize;
                 let payload = &tail[2..end];
-                info!("IE type {} payload {}", numbers::mac_ie::IEType6bit::try_from(ie_type).unwrap(), payload);
+                info!("IE type {} payload {}", ie_type, payload);
                 tail = &tail[end..];
                 continue;
             }
             numbers::mac_pdu::mux_ext::LENGTH_16BIT => {
-                // 16-bit length
-                info!("Don't know how to decode 16-bit IE, bailing.");
+                let len = u16::from_be_bytes(tail[1..3].try_into().unwrap());
+                let end = 3 + len as usize;
+                let payload = &tail[3..end];
+                info!("IE type {} payload {}", ie_type, payload);
+                tail = &tail[end..];
+                continue;
             }
             numbers::mac_pdu::mux_ext::SHORT_IE => {
-                // short IE
                 info!("Don't know how to decode Short IE, bailing.");
+                return;
             }
             _ => unreachable!(),
         }
