@@ -195,21 +195,20 @@ async fn main(spawner: Spawner) {
         if let Some(received) = dect
             .rx()
             .await
-            .expect("Receive operation failed as a whole") {
+            .expect("Receive operation failed as a whole")
+        {
             let start = received.pcc_time();
             let pcc = received.pcc();
             let pdc = received.pdc();
             if let (Ok(start), Ok(pcc), Ok(pdc)) = (start, pcc, pdc) {
-                info!(
-                    "Received at {}: {:?} {:?}",
-                    start,
-                    pcc,
-                    pdc
-                );
+                info!("Received at {}: {:?} {:?}", start, pcc, pdc);
                 log_header(pcc);
                 log_data(pdc);
             } else {
-                warn!("Received partial transmission: {:?} {:?} {:?}", start, pcc, pdc);
+                warn!(
+                    "Received partial transmission: {:?} {:?} {:?}",
+                    start, pcc, pdc
+                );
             }
         }
 

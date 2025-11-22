@@ -47,17 +47,34 @@ pub struct RecvResult<'a>(
 
 impl<'a> RecvResult<'a> {
     pub fn pcc_time(&self) -> Result<u64, PccError> {
-        Ok(self.1?.0.0)
+        Ok(self.1?.0 .0)
     }
     pub fn pcc(&self) -> Result<&[u8], PccError> {
-        Ok(&self.0[..self.1?.0.1])
+        Ok(&self.0[..self.1?.0 .1])
     }
     pub fn pdc(&self) -> Result<&[u8], PdcError> {
         let pcc_and_rest = self.1.map_err(PdcError::PccError)?;
-        let start = pcc_and_rest.0.1;
+        let start = pcc_and_rest.0 .1;
         let len = pcc_and_rest.1?;
-        self.0.get(start..start + len)
-            .ok_or(PdcError::OutOfSpace)
+        self.0.get(start..start + len).ok_or(PdcError::OutOfSpace)
+    }
+}
+
+/// Resulting data slice of a single RSSI measurement.
+///
+/// This keeps a lock on the receive buffer, and must therefore be dropped before the next attempt
+/// to perform any other operation.
+pub struct RssiResult<'a>(
+    MutexGuard<'static, CriticalSectionRawMutex, heapless::Vec<u8, 2400>>,
+    core::ops::Range<usize>,
+    // This ensures that a result is used before the next attempt to receive something (as
+    // that would panic around locking RECV_BUF).
+    core::marker::PhantomData<&'a mut ()>,
+);
+
+impl<'a> RssiResult<'a> {
+    pub fn data(&self) -> &[u8] {
+        &self.0[self.1.clone()]
     }
 }
 
@@ -100,6 +117,7 @@ enum DectEvent {
     PdcError,
     /// Length inside recvbuf
     Pdc(usize),
+    Rssi(u64, Option<core::ops::Range<usize>>),
 }
 
 // FIXME: This is only pub while the DectPhy object doesn't have an init that calls the low-level
@@ -157,17 +175,29 @@ pub extern "C" fn dect_event(arg: super::DectPhyEventWrapper<'_>) {
         nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_RSSI => {
             // SAFETY: Checked the discriminator
             let rssi = unsafe { &arg.__bindgen_anon_1.rssi };
-            let meas = unsafe { core::slice::from_raw_parts(rssi.meas, rssi.meas_len as _) };
-            defmt::info!(
-                "RSSI handle {} start {} carrier {}; meas:",
+            // SAFETY: It is valid now, which is as long as we use it
+            // Casting because it's not precisely a signed integer anyuway (and our buffer is just
+            // bytes).
+            let meas =
+                unsafe { core::slice::from_raw_parts(rssi.meas as *const u8, rssi.meas_len as _) };
+            defmt::trace!(
+                "RSSI handle {} start {} carrier {}; {} measurements",
                 rssi.handle,
                 rssi.meas_start_time,
                 rssi.carrier,
+                meas.len(),
             );
-            defmt::info!("{:02x}", meas);
-            // Doesn't go onto the queue, at least not *that* one where someone is waiting for
-            // Completed.
-            return;
+
+            if let Ok(mut recvbuf) = RECVBUF.try_lock() {
+                let start = recvbuf.len();
+                if recvbuf.extend_from_slice(meas).is_ok() {
+                    DectEvent::Rssi(rssi.meas_start_time, Some(start..(start + meas.len())))
+                } else {
+                    DectEvent::Rssi(rssi.meas_start_time, None)
+                }
+            } else {
+                DectEvent::Rssi(rssi.meas_start_time, None)
+            }
         }
         nrfxlib_sys::nrf_modem_dect_phy_event_id_NRF_MODEM_DECT_PHY_EVT_COMPLETED => {
             // SAFETY: Checked the discriminator
@@ -328,7 +358,21 @@ impl DectPhy {
         Ok(time)
     }
 
-    pub async fn rssi(&mut self, carrier: u16) -> Result<(), Error> {
+    /// Dual purpose:
+    /// * Clear out message
+    /// * Debug tool: This ensures that the panic won't happen in the ISR. (That'd be kind'a fine,
+    ///   but it's easier debugging this way).
+    fn clear_recvbuf(&mut self) {
+        let mut recvbuf = RECVBUF.try_lock().expect(
+            "Buffer in use; unsafe construction of DectPhy, or pending future was dropped.",
+        );
+        recvbuf.clear();
+        drop(recvbuf);
+    }
+
+    pub async fn rssi(&mut self, carrier: u16) -> Result<(u64, RssiResult), Error> {
+        self.clear_recvbuf();
+
         // Relevant DECT constant timing parameters are 1 frame = 10ms, each 10ms frame is composed
         // of 24 slots,
 
@@ -352,33 +396,45 @@ impl DectPhy {
         };
         unsafe { nrfxlib_sys::nrf_modem_dect_phy_rssi(&params) }.into_result()?;
 
-        let DectEventOuter {
-            event: DectEvent::Completed,
-            ..
-        } = DECT_EVENTS.receive().await
-        else {
-            panic!("Sequence violation");
+        let mut result = None;
+
+        loop {
+            match DECT_EVENTS.receive().await.event {
+                DectEvent::Rssi(start, range) => {
+                    debug_assert!(result.is_none(), "Sequence violation");
+                    result = Some((
+                        start,
+                        range.expect("We requested just one run, that fits in the receive buffer"),
+                    ));
+                }
+                DectEvent::Completed => {
+                    break;
+                }
+                _ => panic!("Sequence violation"),
+            }
+        }
+
+        let Some(result) = result else {
+            // FIXME How *should* we expose this? It does happen, eg. when requesting an
+            // unsupported carrier.
+            return Err(Error::InvalidSystemModeConfig);
         };
 
-        Ok(())
+        Ok((
+            result.0,
+            RssiResult(
+                RECVBUF
+                    .try_lock()
+                    .expect("Was checked before, and ISR users release this before returning"),
+                result.1,
+                core::marker::PhantomData,
+            ),
+        ))
     }
 
     // FIXME: heapless is not great for signature yet
-    pub async fn rx(
-        &mut self,
-    ) -> Result<
-        Option<RecvResult<'_>>,
-        Error,
-    > {
-        // Dual purpose:
-        // * Clear out message
-        // * Debug tool: This ensures that the panic won't happen in the ISR. (That'd be kind'a fine,
-        //   but it's easier debugging this way).
-        let mut recvbuf = RECVBUF.try_lock().expect(
-            "Buffer in use; unsafe construction of DectPhy, or pending future was dropped.",
-        );
-        recvbuf.clear();
-        drop(recvbuf);
+    pub async fn rx(&mut self) -> Result<Option<RecvResult<'_>>, Error> {
+        self.clear_recvbuf();
 
         let params = unsafe {
             // FIXME: everything

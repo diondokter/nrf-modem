@@ -19,21 +19,25 @@ for line in open(sys.argv[1]):
     # cargo run is redirected and thus doesn't produce color output
     line = escapes.sub("", line)
 
-    (pre, carrier, tail) = line.partition(" carrier ")
-    if carrier:
-        (carrier_num, _, _) = tail.partition("; ")
-        carrier_num = int(carrier_num)
+    (_, recognized, tail) = line.partition("[INFO ] RSSI for ")
+    if not recognized:
         continue
 
-    (pre, info, hexdata) = line.partition("[INFO ] [")
-    if info:
-        (hexdata, _, _) = hexdata.partition("]")
-        values = array.array("b", bytes.fromhex(hexdata.replace(", ", "")))
+    (carrier, at, tail) = tail.partition(" at ")
+    carrier = int(carrier)
 
-        abs_min = min(abs_min, min(values))
-        abs_max = max(abs_max, max(values))
+    (timestamp, symbols, tail) = tail.partition(": [")
+    # not used for anything yet
+    timestamp = int(timestamp)
 
-        perchannel.setdefault(carrier_num, []).append(values)
+    (data, end, file_and_line) = tail.partition("]")
+
+    values = array.array("b", bytes(int(i) for i in data.split(", ")))
+
+    abs_min = min(abs_min, min(values))
+    abs_max = max(abs_max, max(values))
+
+    perchannel.setdefault(carrier, []).append(values)
 
 minband = min(perchannel.keys())
 maxband = max(perchannel.keys())
