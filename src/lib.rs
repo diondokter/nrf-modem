@@ -107,7 +107,7 @@ pub async fn init(mode: SystemMode, #[cfg(feature = "os-irq")] os_irq: u8) -> Re
 
 /// Common initialization code between [`init_with_custom_layout`] and
 /// [`init_dect_with_custom_layout`]
-fn init_with_custom_layout_core(
+pub fn init_with_custom_layout_core(
     memory_layout: MemoryLayout,
     #[cfg(feature = "os-irq")] os_irq: u8,
 ) -> Result<(), Error> {
@@ -261,65 +261,6 @@ pub async fn init_with_custom_layout(
 
     Ok(())
 }
-
-#[repr(transparent)]
-pub struct DectPhyEventWrapper<'a>(pub &'a nrfxlib_sys::nrf_modem_dect_phy_event);
-
-/// Start the NRF Modem library with a manually specified memory layout
-///
-/// This is a low-level function. To initialize the modem for DECT for more convenient operation,
-/// use a [`dect::Driver`].
-///
-/// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
-/// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
-///
-/// Note that DECT is not completely initialized when the function is returned. Instead, the
-/// initialization start has been called and returned successfully; initialization is complete (and
-/// more steps such as configuring params and activating it) can be taken after the initial "INIT"
-/// event has been sent and processed.
-///
-/// The handler will be called with minimal fanfare, just with a newtype around it that tells that
-/// the struct is fine to to use now (but may later be changed into a still zero-cost but more
-/// powerful wrapper). No attempt is made to take a closure: While we could make the required
-/// casts, the user will be hard-pressed to find a way to store the closure statically without
-/// resorting to TAIT.
-pub fn init_dect_with_custom_layout(
-    memory_layout: MemoryLayout,
-    handler: extern "C" fn(DectPhyEventWrapper),
-    #[cfg(feature = "os-irq")] os_irq: u8,
-) -> Result<DectPreinitialized, Error> {
-    init_with_custom_layout_core(
-        memory_layout,
-        #[cfg(feature = "os-irq")]
-        os_irq,
-    )?;
-
-    defmt::trace!("Setting DECT handler");
-
-    // Note that unlike typical C callbacks, this callback setup takes no argument -- if it did, we
-    // might consider passing in the original function and accepting a single-call indicrection
-    // instead of the extern "C" on the handler and the casts.
-
-    // SAFETY: The transmtue cast away the transparent newtype. The safety of
-    // the handler_set function is provided by the underlying API.
-    unsafe {
-        nrfxlib_sys::nrf_modem_dect_phy_event_handler_set(Some(core::mem::transmute(handler)))
-    }
-    .into_result()?;
-
-    defmt::trace!("Initializing DECT PHY");
-
-    unsafe { nrfxlib_sys::nrf_modem_dect_phy_init() }.into_result()?;
-
-    defmt::trace!("Initialization started.");
-
-    Ok(DectPreinitialized(core::marker::PhantomData))
-}
-
-// FIXME: Is this Send? Better make it not so for the moment
-//
-// and store that we're in an operation so we can cancel if someone cancels a future
-pub struct DectPreinitialized(core::marker::PhantomData<*const ()>);
 
 /// Fetch traces from the modem
 ///

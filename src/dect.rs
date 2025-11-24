@@ -122,8 +122,8 @@ enum DectEvent {
 
 // FIXME: This is only pub while the DectPhy object doesn't have an init that calls the low-level
 // init.
-pub extern "C" fn dect_event(arg: super::DectPhyEventWrapper<'_>) {
-    let arg: &nrfxlib_sys::nrf_modem_dect_phy_event = arg.0;
+extern "C" fn dect_event(arg: *const nrfxlib_sys::nrf_modem_dect_phy_event) {
+    let arg: &nrfxlib_sys::nrf_modem_dect_phy_event = unsafe { &*arg };
 
     defmt::trace!("Handler called: id {}, time {}", arg.id, arg.time);
     let event = match arg.id {
@@ -303,9 +303,35 @@ pub extern "C" fn dect_event(arg: super::DectPhyEventWrapper<'_>) {
 pub struct DectPhy(core::marker::PhantomData<*const ()>);
 
 impl DectPhy {
-    // FIXME: This also kind'a needs the promise that our handler was configured, but worst that
-    // can happen is that we starve for events.
-    pub async fn new(_init_started: crate::DectPreinitialized) -> Result<Self, Error> {
+    /// Starts the NRF Modem library with a manually specified memory layout
+    ///
+    /// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
+    /// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
+    pub async fn init_with_custom_layout(
+        memory_layout: crate::MemoryLayout,
+        #[cfg(feature = "os-irq")] os_irq: u8,
+    ) -> Result<Self, Error> {
+        super::init_with_custom_layout_core(
+            memory_layout,
+            #[cfg(feature = "os-irq")]
+            os_irq,
+        )?;
+
+        defmt::trace!("Setting DECT handler");
+
+        // Note that unlike typical C callbacks, this callback setup takes no argument -- if it did, we
+        // might consider abstracting here, by passing in the original function and accepting a
+        // single-call indicrection instead of the extern "C" on the handler.
+
+        unsafe { nrfxlib_sys::nrf_modem_dect_phy_event_handler_set(Some(dect_event)) }
+            .into_result()?;
+
+        defmt::trace!("Initializing DECT PHY");
+
+        unsafe { nrfxlib_sys::nrf_modem_dect_phy_init() }.into_result()?;
+
+        defmt::trace!("Initialization started.");
+
         let DectEventOuter {
             event: DectEvent::Init { .. },
             ..
