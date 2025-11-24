@@ -297,10 +297,7 @@ extern "C" fn dect_event(arg: *const nrfxlib_sys::nrf_modem_dect_phy_event) {
         .expect("Queue is managed")
 }
 
-// FIXME: Do we need this to have all the properties? (I don't think anything would go wrong if it
-// was sent, and Sync is not an issue anyway, but maybe at some point we want to enqueue parallel
-// operations maybe).
-pub struct DectPhy(core::marker::PhantomData<*const ()>);
+pub struct DectPhy(());
 
 impl DectPhy {
     /// Starts the NRF Modem library with a manually specified memory layout
@@ -367,7 +364,7 @@ impl DectPhy {
             panic!("Sequence violation");
         };
 
-        Ok(Self(Default::default()))
+        Ok(Self(()))
     }
 
     pub async fn time_get(&mut self) -> Result<u64, Error> {
