@@ -16,7 +16,7 @@ embassy-time = { version = "0.5.0", features = [
   "defmt",
   "defmt-timestamp-uptime",
 ] }
-embassy-nrf = { version = "0.7.0", features = [
+embassy-nrf = { version = "0.9.0", features = [
   "defmt",
   "nrf9151-s",
   "time-driver-rtc1",
@@ -27,7 +27,7 @@ embassy-nrf = { version = "0.7.0", features = [
 
 defmt = "1.0.1"
 defmt-rtt = "1.0.0"
-heapless = "0.8.0"
+heapless = "0.9.0"
 
 cortex-m = { version = "0.7.6", features = [
   "inline-asm",
@@ -35,9 +35,7 @@ cortex-m = { version = "0.7.6", features = [
 ] }
 cortex-m-rt = "0.7.0"
 panic-probe = { version = "1.0.0", features = ["print-defmt"] }
-static_cell = { version = "2" }
-embedded-io = "0.6.1"
-embedded-io-async = { version = "0.6.1", features = ["defmt-03"] }
+
 tinyrlibc = "0.5.0"
 
 nrf-modem = { version = "0.9.0", path = "../../", features = [
@@ -46,7 +44,7 @@ nrf-modem = { version = "0.9.0", path = "../../", features = [
   "dect",
   "modem-log",
 ] }
-ts-103-636-numbers = { git = "https://github.com/ariel-os/hophop", version = "0.0.0", features = ["defmt"] }
+ts-103-636-numbers = { version = "0.0.1", features = ["defmt"] }
 
 [profile.release]
 debug = 2
