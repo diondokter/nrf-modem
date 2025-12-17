@@ -111,7 +111,10 @@ impl embedded_io_async::Error for Error {
     }
 }
 
+/// Helper to convert [`nrfxlib_sys`] numeric errors into idiomatic results.
 pub trait ErrorSource {
+    /// Turns a value of 0 into an [`Ok(())`][Result::Ok], whereas any other value gets turned into
+    /// [`Error::NrfError`].
     fn into_result(self) -> Result<(), Error>;
 }
 

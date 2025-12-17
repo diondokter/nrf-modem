@@ -2,7 +2,7 @@
 #![doc = include_str!("../README.md")]
 // #![warn(missing_docs)]
 
-use crate::error::ErrorSource;
+pub use crate::error::ErrorSource;
 use core::{
     cell::RefCell,
     ops::Range,
