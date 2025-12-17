@@ -1,7 +1,7 @@
 pub mod dect;
 
 use cortex_m::peripheral::NVIC;
-use defmt::{debug, warn};
+use defmt::debug;
 use embassy_nrf::{
     bind_interrupts,
     gpio::{Input, Level, Output, OutputDrive, Pull},

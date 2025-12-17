@@ -7,7 +7,7 @@
 
 use defmt::{info, warn};
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer};
+use embassy_time::Timer;
 use nrf_modem::MemoryLayout;
 
 use ts_103_636_numbers as numbers;
@@ -94,7 +94,7 @@ fn log_data(data: &[u8]) {
             let seqno = (data[1] as u16 & 0x0f) << 8 | (data[2] as u16);
 
             let transmitter = &data[4..8];
-            info!("DATA MAC PDU details: reset {}, seqno {}", reset, seqno);
+            info!("DATA MAC PDU details: reset {}, seqno {}, transmitter {:x}", reset, seqno, transmitter);
             3
         }
         numbers::mac_pdu::header_type::BEACON => {
@@ -175,7 +175,7 @@ fn log_data(data: &[u8]) {
 }
 
 #[embassy_executor::main]
-async fn main(spawner: Spawner) {
+async fn main(_spawner: Spawner) {
     let (ipc_start, _leds, _buttons) = init().await;
 
     let mut dect = dect::DectPhy::init_with_custom_layout(MemoryLayout {

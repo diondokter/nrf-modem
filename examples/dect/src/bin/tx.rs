@@ -4,18 +4,17 @@
 #![no_std]
 #![no_main]
 
-use defmt::{info, warn};
+use defmt::info;
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer};
+use embassy_time::Timer;
 use nrf_modem::MemoryLayout;
 
-use ts_103_636_numbers as numbers;
 
 use dect_example::common::*;
 
 #[embassy_executor::main]
-async fn main(spawner: Spawner) {
-    let (ipc_start, leds, buttons) = init().await;
+async fn main(_spawner: Spawner) {
+    let (ipc_start, _leds, buttons) = init().await;
 
     let mut dect = dect::DectPhy::init_with_custom_layout(MemoryLayout {
         base_address: ipc_start,
@@ -52,5 +51,6 @@ async fn main(spawner: Spawner) {
         Timer::after_millis(5).await;
     }
 
-    panic!("If we want to be able to re-flash, we better things at some point to avoid going through unlock again.");
+    // No need to have a panic exit path to not lockup the CPU: This only transmits on demand
+    // anyway.
 }

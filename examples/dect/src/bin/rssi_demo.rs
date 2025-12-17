@@ -3,13 +3,13 @@
 
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer};
+use embassy_time::Timer;
 use nrf_modem::MemoryLayout;
 
 use dect_example::common::*;
 
 #[embassy_executor::main]
-async fn main(spawner: Spawner) {
+async fn main(_spawner: Spawner) {
     let (ipc_start, _leds, _buttons) = init().await;
 
     let mut dect = dect::DectPhy::init_with_custom_layout(MemoryLayout {

@@ -355,17 +355,11 @@ pub struct DectPhy(());
 
 impl DectPhy {
     /// Starts the NRF Modem library with a manually specified memory layout
-    ///
-    /// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
-    /// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
     pub async fn init_with_custom_layout(
         memory_layout: MemoryLayout,
-        #[cfg(feature = "os-irq")] os_irq: u8,
     ) -> Result<Self, Error> {
         init_with_custom_layout_core(
             memory_layout,
-            #[cfg(feature = "os-irq")]
-            os_irq,
         )?;
 
         defmt::trace!("Setting DECT handler");
