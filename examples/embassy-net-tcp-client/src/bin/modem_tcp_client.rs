@@ -17,7 +17,10 @@ use embedded_io_async::Write;
 use heapless::Vec;
 use nrf_modem::embassy_net_modem::context::Status;
 use nrf_modem::embassy_net_modem::NetDriver;
-use nrf_modem::embassy_net_modem::{context, Runner, State};
+use nrf_modem::embassy_net_modem::{
+    context::{self, PdpType},
+    Runner, State,
+};
 use nrf_modem::{ConnectionPreference, MemoryLayout, SystemMode};
 use static_cell::StaticCell;
 
@@ -59,7 +62,7 @@ pub async fn control_task(
     stack: Stack<'static>,
 ) {
     if let Some(config) = config {
-        control.configure(&config).await.unwrap();
+        control.configure(&config, PdpType::Ip).await.unwrap();
     }
 
     control
@@ -70,7 +73,7 @@ pub async fn control_task(
         .unwrap();
 }
 pub fn status_to_config(status: &Status) -> embassy_net::ConfigV4 {
-    let Some(IpAddr::V4(addr)) = status.ip else {
+    let Some(IpAddr::V4(addr)) = status.ip1 else {
         panic!("Unexpected IP address");
     };
 

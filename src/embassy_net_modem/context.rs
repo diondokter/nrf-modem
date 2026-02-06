@@ -32,6 +32,32 @@ pub struct Config<'a> {
     pub pin: Option<&'a [u8]>,
 }
 
+/// Which type of communication happens on this PDP
+#[derive(Clone, Copy, PartialEq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PdpType {
+    /// IPv4
+    Ip,
+    /// IPv6
+    Ipv6,
+    /// Dual IP stack
+    Ipv4v6,
+    /// Non-IP data
+    NonIp,
+}
+
+// https://docs.nordicsemi.com/bundle/ref_at_commands/page/REF/at_commands/packet_domain/cgdcont_set.html
+impl<'a> From<PdpType> for &'a str {
+    fn from(val: PdpType) -> &'a str {
+        match val {
+            PdpType::Ip => "IP",
+            PdpType::Ipv6 => "IPV6",
+            PdpType::Ipv4v6 => "IPV4V6",
+            PdpType::NonIp => "Non-IP",
+        }
+    }
+}
+
 /// Authentication protocol.
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -68,11 +94,13 @@ impl From<at_commands::parser::ParseError> for Error {
 pub struct Status {
     /// Attached to APN or not.
     pub attached: bool,
-    /// IP if assigned.
-    pub ip: Option<IpAddr>,
+    /// IP if assigned. Can be IPv4 or IPv6. In dual stack mode this will always be an IPv4 address.
+    pub ip1: Option<IpAddr>,
+    /// Second IP if assigned, happens in dual stack where this will always be an IPv6 address.
+    pub ip2: Option<IpAddr>,
     /// Gateway if assigned.
     pub gateway: Option<IpAddr>,
-    /// DNS servers if assigned.
+    /// DNS servers if assigned. The modem can return a maximum of 2 DNS servers.
     pub dns: Vec<IpAddr, 2>,
 }
 
@@ -80,8 +108,11 @@ pub struct Status {
 impl defmt::Format for Status {
     fn format(&self, f: defmt::Formatter<'_>) {
         defmt::write!(f, "attached: {}", self.attached);
-        if let Some(ip) = &self.ip {
-            defmt::write!(f, ", ip: {}", defmt::Debug2Format(&ip));
+        if let Some(ip1) = &self.ip1 {
+            defmt::write!(f, ", ip1: {}", defmt::Debug2Format(&ip1));
+        }
+        if let Some(ip2) = &self.ip2 {
+            defmt::write!(f, ", ip2: {}", defmt::Debug2Format(&ip2));
         }
     }
 }
@@ -90,6 +121,8 @@ impl<'a> Control<'a> {
     /// Create a new instance of a control handle for a given context.
     ///
     /// Will wait for the modem to be initialized if not.
+    ///
+    /// `cid` indicates which PDP context to use, range 0-10.
     pub async fn new(control: super::Control<'a>, cid: u8) -> Self {
         Self { control, cid }
     }
@@ -105,7 +138,7 @@ impl<'a> Control<'a> {
     /// be called if the configuration has not been changed.
     ///
     /// After configuring, invoke [Self::enable] to activate the configuration.
-    pub async fn configure(&self, config: &Config<'_>) -> Result<(), Error> {
+    pub async fn configure(&self, config: &Config<'_>, pdp_type: PdpType) -> Result<(), Error> {
         let mut cmd: [u8; 256] = [0; 256];
 
         let op = CommandBuilder::create_set(&mut cmd, true)
@@ -121,7 +154,7 @@ impl<'a> Control<'a> {
         let op = CommandBuilder::create_set(&mut cmd, true)
             .named("+CGDCONT")
             .with_int_parameter(self.cid)
-            .with_string_parameter("IP")
+            .with_string_parameter::<&str>(pdp_type.into())
             .with_string_parameter(config.apn)
             .finish()
             .map_err(|_| Error::BufferTooSmall)?;
@@ -225,7 +258,8 @@ impl<'a> Control<'a> {
         if !attached {
             return Ok(Status {
                 attached,
-                ip: None,
+                ip1: None,
+                ip2: None,
                 gateway: None,
                 dns: Vec::new(),
             });
@@ -237,7 +271,7 @@ impl<'a> Control<'a> {
             .finish()
             .map_err(|_| Error::BufferTooSmall)?;
         let n = self.control.at_command(op).await;
-        let (_, ip1, _ip2) = CommandParser::parse(n.as_bytes())
+        let (_, ip1, ip2) = CommandParser::parse(n.as_bytes())
             .expect_identifier(b"+CGPADDR: ")
             .expect_int_parameter()
             .expect_optional_string_parameter()
@@ -245,7 +279,14 @@ impl<'a> Control<'a> {
             .expect_identifier(b"\r\nOK")
             .finish()?;
 
-        let ip = if let Some(ip) = ip1 {
+        let ip1 = if let Some(ip) = ip1 {
+            let ip = IpAddr::from_str(ip).map_err(|_| Error::AddrParseError)?;
+            Some(ip)
+        } else {
+            None
+        };
+
+        let ip2 = if let Some(ip) = ip2 {
             let ip = IpAddr::from_str(ip).map_err(|_| Error::AddrParseError)?;
             Some(ip)
         } else {
@@ -299,7 +340,8 @@ impl<'a> Control<'a> {
 
         Ok(Status {
             attached,
-            ip,
+            ip1,
+            ip2,
             gateway,
             dns,
         })
