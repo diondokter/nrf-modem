@@ -15,11 +15,9 @@ use embassy_nrf::{
 use embassy_time::{Duration, Timer};
 use embedded_io_async::Write;
 use heapless::Vec;
-use nrf_modem::embassy_net_modem::context::Status;
-use nrf_modem::embassy_net_modem::NetDriver;
 use nrf_modem::embassy_net_modem::{
-    context::{self, PdpType},
-    Runner, State,
+    context::{self, PdConfig, PdpType, Status},
+    NetDriver, Runner, State,
 };
 use nrf_modem::{ConnectionPreference, MemoryLayout, SystemMode};
 use static_cell::StaticCell;
@@ -58,12 +56,11 @@ async fn modem_task(runner: Runner<'static>) -> ! {
 #[embassy_executor::task]
 pub async fn control_task(
     control: &'static context::Control<'static>,
-    config: Option<context::Config<'static>>,
+    config: PdConfig<'static>,
+    pin: Option<&'static [u8]>,
     stack: Stack<'static>,
 ) {
-    if let Some(config) = config {
-        control.configure(&config, PdpType::Ip).await.unwrap();
-    }
+    control.configure(&config, pin).await.unwrap();
 
     control
         .run(|status| {
@@ -193,8 +190,16 @@ async fn main(spawner: Spawner) {
         seed,
     );
 
+    let config = PdConfig {
+        apn: None,
+        pdn_auth: None,
+        pdp_type: PdpType::Ip,
+    };
+
     spawner.spawn(net_task(runner)).unwrap();
-    spawner.spawn(control_task(control, None, stack)).unwrap();
+    spawner
+        .spawn(control_task(control, config, None, stack))
+        .unwrap();
 
     info!("Waiting for modem to be ready...");
     led.set_low();
