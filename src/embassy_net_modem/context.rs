@@ -40,7 +40,7 @@ pub struct PdConfig<'a> {
 }
 
 /// Which type of communication happens on this PDP
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PdpType {
     /// IPv4
@@ -66,7 +66,7 @@ impl<'a> From<PdpType> for &'a str {
 }
 
 /// Authentication protocol.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 pub enum AuthProt {
