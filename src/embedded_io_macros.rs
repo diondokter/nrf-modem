@@ -13,6 +13,11 @@ macro_rules! impl_write_trait {
                 Self::write(self, buf).await?;
                 Ok(buf.len())
             }
+
+            async fn flush(&mut self) -> Result<(), Self::Error> {
+                // There's no ability to flush
+                Ok(())
+            }
         }
     };
 }

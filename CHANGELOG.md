@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.10.0 (2026-02-12)
+
+- *Breaking*: add support for configuring an IPv6 stack using embassy-net
+- *Breaking*: update to embedded-io-async 0.7.0
+- *Breaking*: update to embedded-nal-async 0.9.0
+
 ## 0.9.2 (2025-10-30)
 
 - A modem fault not triggers a panic instead of leaving the modem in a broken state.
