@@ -1,4 +1,4 @@
-use core::str::Utf8Error;
+use core::{fmt::Display, str::Utf8Error};
 
 use at_commands::parser::ParseError;
 
@@ -61,6 +61,14 @@ pub enum Error {
     #[cfg(feature = "embedded-nal-async")]
     ReverseDnsLookupNotSupported,
 }
+
+impl Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl core::error::Error for Error {}
 
 impl embedded_io_async::Error for Error {
     fn kind(&self) -> embedded_io_async::ErrorKind {

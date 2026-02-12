@@ -1,6 +1,6 @@
 [package]
 name = "nrf-modem"
-version = "0.9.2"
+version = "0.10.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -28,13 +28,14 @@ critical-section = "1.2.0"
 embassy-sync = "0.7.2"
 embassy-time = { version = "0.5.0", optional = true }
 grounded = "0.2.0"
-embedded-io-async = "0.6.1"
+embedded-io-async = "0.7.0"
 
 # embassy-net driver
 embassy-futures = { version = "0.1.1", optional = true }
 embassy-net-driver-channel = { version = "0.3.0", optional = true }
 heapless = { version = "0.8.0", optional = true }
-embedded-nal-async = { version = "0.8.0", optional = true }
+
+embedded-nal-async = { version = "0.9.0", optional = true }
 
 [build-dependencies]
 cc = { version = "1.2.18", optional = true }
