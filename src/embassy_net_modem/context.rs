@@ -20,20 +20,53 @@ pub struct Control<'a> {
     cid: u8,
 }
 
-/// Configuration for a given context
-pub struct Config<'a> {
-    /// Desired APN address.
-    pub apn: &'a [u8],
+/// Authentication parameters for the Packet Data Network (PDN).
+pub struct PdnAuth<'a> {
     /// Desired authentication protocol.
     pub auth_prot: AuthProt,
-    /// Credentials.
+    /// Credentials to connect to the network.
     pub auth: Option<(&'a [u8], &'a [u8])>,
-    /// SIM pin
-    pub pin: Option<&'a [u8]>,
+}
+
+/// Packet domain configuration to be applied to a context.
+pub struct PdConfig<'a> {
+    /// Desired Access Point Name (APN) to connect to. Set to None to keep the SIM defaults.
+    pub apn: Option<&'a [u8]>,
+    /// Desired authentication parameters, setting this to `None` will not
+    /// execute the `+CGAUTH` AT command, keeping the defaults for this SIM.
+    pub pdn_auth: Option<PdnAuth<'a>>,
+    /// Packet Domain Protocol type.
+    pub pdp_type: PdpType,
+}
+
+/// Which type of communication happens on this PDP
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PdpType {
+    /// IPv4
+    Ip,
+    /// IPv6
+    Ipv6,
+    /// Dual IP stack
+    Ipv4v6,
+    /// Non-IP data
+    NonIp,
+}
+
+// https://docs.nordicsemi.com/bundle/ref_at_commands/page/REF/at_commands/packet_domain/cgdcont_set.html
+impl<'a> From<PdpType> for &'a str {
+    fn from(val: PdpType) -> &'a str {
+        match val {
+            PdpType::Ip => "IP",
+            PdpType::Ipv6 => "IPV6",
+            PdpType::Ipv4v6 => "IPV4V6",
+            PdpType::NonIp => "Non-IP",
+        }
+    }
 }
 
 /// Authentication protocol.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 pub enum AuthProt {
@@ -68,11 +101,13 @@ impl From<at_commands::parser::ParseError> for Error {
 pub struct Status {
     /// Attached to APN or not.
     pub attached: bool,
-    /// IP if assigned.
-    pub ip: Option<IpAddr>,
+    /// IP if assigned. Can be IPv4 or IPv6. In dual stack mode this will always be an IPv4 address.
+    pub ip1: Option<IpAddr>,
+    /// Second IP if assigned, happens in dual stack where this will always be an IPv6 address.
+    pub ip2: Option<IpAddr>,
     /// Gateway if assigned.
     pub gateway: Option<IpAddr>,
-    /// DNS servers if assigned.
+    /// DNS servers if assigned. The modem can return a maximum of 2 DNS servers.
     pub dns: Vec<IpAddr, 2>,
 }
 
@@ -80,8 +115,11 @@ pub struct Status {
 impl defmt::Format for Status {
     fn format(&self, f: defmt::Formatter<'_>) {
         defmt::write!(f, "attached: {}", self.attached);
-        if let Some(ip) = &self.ip {
-            defmt::write!(f, ", ip: {}", defmt::Debug2Format(&ip));
+        if let Some(ip1) = &self.ip1 {
+            defmt::write!(f, ", ip1: {}", defmt::Debug2Format(&ip1));
+        }
+        if let Some(ip2) = &self.ip2 {
+            defmt::write!(f, ", ip2: {}", defmt::Debug2Format(&ip2));
         }
     }
 }
@@ -90,6 +128,8 @@ impl<'a> Control<'a> {
     /// Create a new instance of a control handle for a given context.
     ///
     /// Will wait for the modem to be initialized if not.
+    ///
+    /// `cid` indicates which PDP context to use, range 0-10.
     pub async fn new(control: super::Control<'a>, cid: u8) -> Self {
         Self { control, cid }
     }
@@ -105,7 +145,7 @@ impl<'a> Control<'a> {
     /// be called if the configuration has not been changed.
     ///
     /// After configuring, invoke [Self::enable] to activate the configuration.
-    pub async fn configure(&self, config: &Config<'_>) -> Result<(), Error> {
+    pub async fn configure(&self, config: &PdConfig<'_>, pin: Option<&[u8]>) -> Result<(), Error> {
         let mut cmd: [u8; 256] = [0; 256];
 
         let op = CommandBuilder::create_set(&mut cmd, true)
@@ -118,37 +158,41 @@ impl<'a> Control<'a> {
             .expect_identifier(b"OK")
             .finish()?;
 
-        let op = CommandBuilder::create_set(&mut cmd, true)
+        let mut op = CommandBuilder::create_set(&mut cmd, true)
             .named("+CGDCONT")
             .with_int_parameter(self.cid)
-            .with_string_parameter("IP")
-            .with_string_parameter(config.apn)
-            .finish()
-            .map_err(|_| Error::BufferTooSmall)?;
+            .with_string_parameter::<&str>(config.pdp_type.into());
+        if let Some(apn) = config.apn {
+            op = op.with_string_parameter(apn);
+        }
+        let op = op.finish().map_err(|_| Error::BufferTooSmall)?;
+
         let n = self.control.at_command(op).await;
         // info!("RES1: {}", unsafe { core::str::from_utf8_unchecked(&buf[..n]) });
         CommandParser::parse(n.as_bytes())
             .expect_identifier(b"OK")
             .finish()?;
 
-        let mut op = CommandBuilder::create_set(&mut cmd, true)
-            .named("+CGAUTH")
-            .with_int_parameter(self.cid)
-            .with_int_parameter(config.auth_prot as u8);
-        if let Some((username, password)) = config.auth {
-            op = op
-                .with_string_parameter(username)
-                .with_string_parameter(password);
+        if let Some(pdn_auth) = &config.pdn_auth {
+            let mut op = CommandBuilder::create_set(&mut cmd, true)
+                .named("+CGAUTH")
+                .with_int_parameter(self.cid)
+                .with_int_parameter(pdn_auth.auth_prot as u8);
+            if let Some((username, password)) = pdn_auth.auth {
+                op = op
+                    .with_string_parameter(username)
+                    .with_string_parameter(password);
+            }
+            let op = op.finish().map_err(|_| Error::BufferTooSmall)?;
+
+            let n = self.control.at_command(op).await;
+            // info!("RES2: {}", unsafe { core::str::from_utf8_unchecked(&buf[..n]) });
+            CommandParser::parse(n.as_bytes())
+                .expect_identifier(b"OK")
+                .finish()?;
         }
-        let op = op.finish().map_err(|_| Error::BufferTooSmall)?;
 
-        let n = self.control.at_command(op).await;
-        // info!("RES2: {}", unsafe { core::str::from_utf8_unchecked(&buf[..n]) });
-        CommandParser::parse(n.as_bytes())
-            .expect_identifier(b"OK")
-            .finish()?;
-
-        if let Some(pin) = config.pin {
+        if let Some(pin) = pin {
             let op = CommandBuilder::create_set(&mut cmd, true)
                 .named("+CPIN")
                 .with_string_parameter(pin)
@@ -225,7 +269,8 @@ impl<'a> Control<'a> {
         if !attached {
             return Ok(Status {
                 attached,
-                ip: None,
+                ip1: None,
+                ip2: None,
                 gateway: None,
                 dns: Vec::new(),
             });
@@ -237,7 +282,7 @@ impl<'a> Control<'a> {
             .finish()
             .map_err(|_| Error::BufferTooSmall)?;
         let n = self.control.at_command(op).await;
-        let (_, ip1, _ip2) = CommandParser::parse(n.as_bytes())
+        let (_, ip1, ip2) = CommandParser::parse(n.as_bytes())
             .expect_identifier(b"+CGPADDR: ")
             .expect_int_parameter()
             .expect_optional_string_parameter()
@@ -245,7 +290,14 @@ impl<'a> Control<'a> {
             .expect_identifier(b"\r\nOK")
             .finish()?;
 
-        let ip = if let Some(ip) = ip1 {
+        let ip1 = if let Some(ip) = ip1 {
+            let ip = IpAddr::from_str(ip).map_err(|_| Error::AddrParseError)?;
+            Some(ip)
+        } else {
+            None
+        };
+
+        let ip2 = if let Some(ip) = ip2 {
             let ip = IpAddr::from_str(ip).map_err(|_| Error::AddrParseError)?;
             Some(ip)
         } else {
@@ -299,7 +351,8 @@ impl<'a> Control<'a> {
 
         Ok(Status {
             attached,
-            ip,
+            ip1,
+            ip2,
             gateway,
             dns,
         })
