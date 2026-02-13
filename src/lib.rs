@@ -2,7 +2,7 @@
 #![doc = include_str!("../README.md")]
 // #![warn(missing_docs)]
 
-use crate::error::ErrorSource;
+pub use crate::error::ErrorSource;
 use core::{
     cell::RefCell,
     ops::Range,
@@ -102,12 +102,14 @@ pub async fn init(mode: SystemMode, #[cfg(feature = "os-irq")] os_irq: u8) -> Re
     .await
 }
 
-/// Start the NRF Modem library with a manually specified memory layout
+/// The core of [`init_with_custom_layout`] (and thus [`init`]).
 ///
-/// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
-/// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
-pub async fn init_with_custom_layout(
-    mode: SystemMode,
+/// This only runs the steps of setting up memory, DC/DC converter and running
+/// [`nrfxlib_sys::nrf_modem_init()`], but does not start exchanging AT commands, setting up AT
+/// notifications or setting a system mode.
+///
+/// This is mainly useful when working with the DECT modem firmware.
+pub fn init_with_custom_layout_core(
     memory_layout: MemoryLayout,
     #[cfg(feature = "os-irq")] os_irq: u8,
 ) -> Result<(), Error> {
@@ -119,6 +121,11 @@ pub async fn init_with_custom_layout(
     ffi::OS_IRQ.store(os_irq, Ordering::Relaxed);
 
     const SHARED_MEMORY_RANGE: Range<u32> = 0x2000_0000..0x2002_0000;
+    const CTRL_SIZE: u32 = if cfg!(feature = "dect") {
+        nrfxlib_sys::NRF_MODEM_DECT_PHY_SHMEM_CTRL_SIZE
+    } else {
+        nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
+    };
 
     if !SHARED_MEMORY_RANGE.contains(&memory_layout.base_address) {
         return Err(Error::BadMemoryLayout);
@@ -126,7 +133,7 @@ pub async fn init_with_custom_layout(
 
     if !SHARED_MEMORY_RANGE.contains(
         &(memory_layout.base_address
-                + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
+                + CTRL_SIZE
                 + memory_layout.tx_area_size
                 + memory_layout.rx_area_size
                 + memory_layout.trace_area_size
@@ -168,21 +175,19 @@ pub async fn init_with_custom_layout(
         shmem: nrfxlib_sys::nrf_modem_shmem_cfg {
             ctrl: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_1 {
                 base: memory_layout.base_address,
-                size: nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE,
+                size: CTRL_SIZE,
             },
             tx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_2 {
-                base: memory_layout.base_address + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE,
+                base: memory_layout.base_address + CTRL_SIZE,
                 size: memory_layout.tx_area_size,
             },
             rx: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_3 {
-                base: memory_layout.base_address
-                    + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
-                    + memory_layout.tx_area_size,
+                base: memory_layout.base_address + CTRL_SIZE + memory_layout.tx_area_size,
                 size: memory_layout.rx_area_size,
             },
             trace: nrfxlib_sys::nrf_modem_shmem_cfg__bindgen_ty_4 {
                 base: memory_layout.base_address
-                    + nrfxlib_sys::NRF_MODEM_CELLULAR_SHMEM_CTRL_SIZE
+                    + CTRL_SIZE
                     + memory_layout.tx_area_size
                     + memory_layout.rx_area_size,
                 size: memory_layout.trace_area_size,
@@ -207,6 +212,24 @@ pub async fn init_with_custom_layout(
 
     // OK, let's start the library
     unsafe { nrfxlib_sys::nrf_modem_init(PARAMS.get()) }.into_result()?;
+
+    Ok(())
+}
+
+/// Start the NRF Modem library with a manually specified memory layout
+///
+/// With the os_irq feature enabled, you need to specify the OS scheduled IRQ number.
+/// The modem's IPC interrupt should be higher than the os irq. (IPC should pre-empt the executor)
+pub async fn init_with_custom_layout(
+    mode: SystemMode,
+    memory_layout: MemoryLayout,
+    #[cfg(feature = "os-irq")] os_irq: u8,
+) -> Result<(), Error> {
+    init_with_custom_layout_core(
+        memory_layout,
+        #[cfg(feature = "os-irq")]
+        os_irq,
+    )?;
 
     // Start tracing
     #[cfg(feature = "modem-trace")]

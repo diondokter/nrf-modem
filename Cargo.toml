@@ -13,7 +13,7 @@ keywords = ["nRF91", "LTE", "GPS", "NB-IoT", "embedded"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nrfxlib-sys = "=2.9.2"
+nrfxlib-sys = { version = "=3.0.2", git = "https://github.com/chrysn-pull-requests/nrfxlib-sys", branch = "test-dect-bis" }
 
 futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
 num_enum = { version = "0.7.3", default-features = false }
@@ -46,6 +46,11 @@ defmt = ["dep:defmt", "at-commands/defmt"]
 dns-async = ["dep:embassy-time"]
 modem-trace = []
 modem-log = ["nrfxlib-sys/log", "dep:cc"]
+
+### Switches the library into DECT-2020 NR+ mode.
+###
+### This alters its behavior a lot, while reusing the same core functionality.
+dect = ["nrfxlib-sys/dect"]
 
 nrf9160 = ["nrfxlib-sys/nrf9160", "dep:nrf9160-pac"]
 nrf9151 = ["nrf9120"]
