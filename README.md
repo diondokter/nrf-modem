@@ -111,7 +111,7 @@ let embassy_peripherals = embassy_nrf::init(Default::default());
 const SPU_REGION_SIZE: u32 = 0x2000; // 8kb
 const RAM_START: u32 = 0x2000_0000; // 256kb
 let spu = embassy_nrf::pac::SPU;
-let region_start = 0x2000_000 - RAM_START / SPU_REGION_SIZE;
+let region_start = 0x2000_0000 - RAM_START / SPU_REGION_SIZE;
 let region_end = region_start + (0x2000_8000 - 0x2000_0000) / SPU_REGION_SIZE;
 for i in region_start..region_end {
     spu.ramregion(i as usize).perm().write(|w| {
