@@ -13,7 +13,7 @@ keywords = ["nRF91", "LTE", "GPS", "NB-IoT", "embedded"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nrfxlib-sys = "=2.9.2"
+nrfxlib-sys = "3.0.3"
 
 futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
 num_enum = { version = "0.7.3", default-features = false }
@@ -46,6 +46,13 @@ defmt = ["dep:defmt", "at-commands/defmt"]
 dns-async = ["dep:embassy-time"]
 modem-trace = []
 modem-log = ["nrfxlib-sys/log", "dep:cc"]
+
+### Switches the library into DECT-2020 NR+ mode.
+##
+## This subtly alters the behavior, while reusing the same core functionality:
+## #For example, the size of the CTRL memory region is adjusted, and a shutdown
+## feature of the FFI is bypassed.
+dect = ["nrfxlib-sys/dect"]
 
 nrf9160 = ["nrfxlib-sys/nrf9160", "dep:nrf9160-pac"]
 nrf9151 = ["nrf9120"]
