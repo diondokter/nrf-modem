@@ -1,11 +1,11 @@
 #![no_std]
 #![no_main]
 
-use core::{net::IpAddr, str::FromStr};
+use core::str::FromStr;
 use cortex_m::peripheral::NVIC;
 use defmt::{debug, info, warn};
 use embassy_executor::Spawner;
-use embassy_net::{Ipv4Cidr, Stack, StackResources};
+use embassy_net::{Stack, StackResources};
 use embassy_nrf::{
     bind_interrupts,
     gpio::{Level, Output, OutputDrive},
@@ -27,6 +27,12 @@ extern crate tinyrlibc;
 
 pub type NetworkDevice = NetDriver<'static>;
 const MAX_CONCURRENT_SOCKETS: usize = 4;
+#[cfg(all(feature = "ipv4", not(feature = "ipv6")))]
+const PDP_TYPE: PdpType = PdpType::Ip;
+#[cfg(all(feature = "ipv4", feature = "ipv6"))]
+const PDP_TYPE: PdpType = PdpType::Ipv4v6;
+#[cfg(all(not(feature = "ipv4"), feature = "ipv6"))]
+const PDP_TYPE: PdpType = PdpType::Ipv6;
 
 #[doc(hidden)]
 pub struct InterruptHandler {
@@ -64,33 +70,44 @@ pub async fn control_task(
 
     control
         .run(|status| {
-            stack.set_config_v4(status_to_config(status));
+            let config = status_to_config(status);
+            #[cfg(feature = "ipv4")]
+            stack.set_config_v4(config.ipv4);
+            #[cfg(feature = "ipv6")]
+            stack.set_config_v6(config.ipv6);
         })
         .await
         .unwrap();
 }
-pub fn status_to_config(status: &Status) -> embassy_net::ConfigV4 {
-    let Some(IpAddr::V4(addr)) = status.ip1 else {
-        panic!("Unexpected IP address");
-    };
-
-    let gateway = match status.gateway {
-        Some(IpAddr::V4(addr)) => Some(addr),
-        _ => None,
-    };
-
-    let mut dns_servers = Vec::new();
-    for dns in status.dns.iter() {
-        if let IpAddr::V4(ip) = dns {
-            dns_servers.push(*ip).unwrap();
-        }
+pub fn status_to_config(status: &Status) -> embassy_net::Config {
+    let mut config = embassy_net::Config::default();
+    #[cfg(feature = "ipv4")]
+    if let Some(ref link) = status.ipv4_link {
+        let mut dns_servers = Vec::new();
+        dns_servers.extend(link.dns.iter().copied());
+        config.ipv4 = embassy_net::ConfigV4::Static(embassy_net::StaticConfigV4 {
+            address: embassy_net::Ipv4Cidr::new(link.ip, 32),
+            dns_servers,
+            gateway: link.gateway,
+        });
+    } else {
+        defmt::error!("No ipv4 config found");
     }
 
-    embassy_net::ConfigV4::Static(embassy_net::StaticConfigV4 {
-        address: Ipv4Cidr::new(addr, 32),
-        gateway,
-        dns_servers,
-    })
+    #[cfg(feature = "ipv6")]
+    if let Some(ref link) = status.ipv6_link {
+        let mut dns_servers = Vec::new();
+        dns_servers.extend(link.dns.iter().copied());
+        config.ipv6 = embassy_net::ConfigV6::Static(embassy_net::StaticConfigV6 {
+            address: embassy_net::Ipv6Cidr::new(link.ip, 128),
+            dns_servers,
+            gateway: link.gateway,
+        });
+    } else {
+        defmt::error!("No ipv6 config found");
+    }
+
+    config
 }
 
 pub async fn init<'a>(spawner: Spawner) -> (NetworkDevice, &'a context::Control<'a>) {
@@ -193,7 +210,7 @@ async fn main(spawner: Spawner) {
     let config = PdConfig {
         apn: None,
         pdn_auth: None,
-        pdp_type: PdpType::Ip,
+        pdp_type: PDP_TYPE,
     };
 
     spawner.spawn(net_task(runner)).unwrap();
@@ -215,7 +232,11 @@ async fn main(spawner: Spawner) {
         socket.set_timeout(Some(Duration::from_secs(10)));
 
         info!("Connecting...");
+        #[cfg(all(feature = "ipv4", not(feature = "ipv6")))]
         let host_addr = embassy_net::Ipv4Address::from_str("45.79.112.203").unwrap();
+        #[cfg(feature = "ipv6")]
+        let host_addr =
+            embassy_net::Ipv6Address::from_str("2600:3c01::f03c:91ff:feab:f98b").unwrap();
         if let Err(e) = socket.connect((host_addr, 4242)).await {
             warn!("connect error: {:?}", e);
             Timer::after_secs(10).await;
