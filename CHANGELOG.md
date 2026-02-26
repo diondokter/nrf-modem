@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.10.1 (2026-02-26)
+
+- Add minimal DECT-2020 NR+ support. Activate it using the `dect` feature on supported nRF91 devices.
+  See the dect example in the examples folder.
+
 ## 0.10.0 (2026-02-12)
 
 - *Breaking*: add support for configuring an IPv6 stack using embassy-net
