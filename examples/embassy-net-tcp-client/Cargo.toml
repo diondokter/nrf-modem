@@ -48,5 +48,12 @@ tinyrlibc = "0.5.0"
 # embassy-net branch
 nrf-modem = { path = "../../", features = ["embassy-net", "nrf9160", "defmt"] }
 
+[features]
+default = ["ipv4"]
+
+ipv4 = ["embassy-net/proto-ipv4"]
+ipv6 = ["embassy-net/proto-ipv6"]
+
+
 [profile.release]
 debug = 2
