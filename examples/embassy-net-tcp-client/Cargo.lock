@@ -358,7 +358,7 @@ dependencies = [
  "embassy-net-driver",
  "embassy-sync",
  "embassy-time",
- "embedded-io-async",
+ "embedded-io-async 0.6.1",
  "embedded-nal-async",
  "heapless",
  "managed",
@@ -397,8 +397,8 @@ dependencies = [
  "embassy-net",
  "embassy-nrf",
  "embassy-time",
- "embedded-io",
- "embedded-io-async",
+ "embedded-io 0.6.1",
+ "embedded-io-async 0.6.1",
  "heapless",
  "nrf-modem",
  "panic-probe",
@@ -429,8 +429,8 @@ dependencies = [
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
- "embedded-io",
- "embedded-io-async",
+ "embedded-io 0.6.1",
+ "embedded-io-async 0.6.1",
  "embedded-storage",
  "embedded-storage-async",
  "fixed",
@@ -448,7 +448,7 @@ dependencies = [
  "cfg-if",
  "critical-section",
  "defmt 1.0.1",
- "embedded-io-async",
+ "embedded-io-async 0.6.1",
  "futures-core",
  "futures-sink",
  "heapless",
@@ -497,7 +497,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17119855ccc2d1f7470a39756b12068454ae27a3eabb037d940b5c03d9c77b7a"
 dependencies = [
  "defmt 1.0.1",
- "embedded-io-async",
+ "embedded-io-async 0.6.1",
 ]
 
 [[package]]
@@ -535,13 +535,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-io"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9eb1aa714776b75c7e67e1da744b81a129b3ff919c8712b5e1b32252c1f07cc7"
+
+[[package]]
 name = "embedded-io-async"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ff09972d4073aa8c299395be75161d582e7629cd663171d62af73c8d50dba3f"
 dependencies = [
  "defmt 0.3.100",
- "embedded-io",
+ "embedded-io 0.6.1",
+]
+
+[[package]]
+name = "embedded-io-async"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2564b9f813c544241430e147d8bc454815ef9ac998878d30cc3055449f7fd4c0"
+dependencies = [
+ "embedded-io 0.7.1",
 ]
 
 [[package]]
@@ -559,7 +574,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76959917cd2b86f40a98c28dd5624eddd1fa69d746241c8257eac428d83cb211"
 dependencies = [
- "embedded-io-async",
+ "embedded-io-async 0.6.1",
  "embedded-nal",
 ]
 
@@ -827,7 +842,7 @@ dependencies = [
 
 [[package]]
 name = "nrf-modem"
-version = "0.9.0"
+version = "0.10.1"
 dependencies = [
  "arrayvec",
  "at-commands",
@@ -838,7 +853,7 @@ dependencies = [
  "embassy-net-driver-channel",
  "embassy-sync",
  "embassy-time",
- "embedded-io-async",
+ "embedded-io-async 0.7.0",
  "futures",
  "grounded",
  "heapless",
@@ -870,9 +885,9 @@ dependencies = [
 
 [[package]]
 name = "nrfxlib-sys"
-version = "2.9.2"
+version = "3.0.3+3.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1922de3a50ef4d37e7d5fec8ebc4c0c9c4a5a077cecc43e198bbbf8f5a16436a"
+checksum = "573d7e42c0dc325e4631bc22346d5c046ed68c4253c3da8fc990b3380fa8633d"
 dependencies = [
  "bindgen",
  "llvm-tools",
