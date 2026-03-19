@@ -60,6 +60,9 @@ pub enum Error {
     DnsParseFailed,
     #[cfg(feature = "embedded-nal-async")]
     ReverseDnsLookupNotSupported,
+    /// The address resturned by the modem couldn't be parsed
+    #[cfg(feature = "embassy-net")]
+    AddrParseError,
 }
 
 impl Display for Error {
@@ -115,6 +118,8 @@ impl embedded_io_async::Error for Error {
             Error::DnsParseFailed => embedded_io_async::ErrorKind::Other,
             #[cfg(feature = "embedded-nal-async")]
             Error::ReverseDnsLookupNotSupported => embedded_io_async::ErrorKind::Unsupported,
+            #[cfg(feature = "embassy-net")]
+            Error::AddrParseError => embedded_io_async::ErrorKind::InvalidInput,
         }
     }
 }

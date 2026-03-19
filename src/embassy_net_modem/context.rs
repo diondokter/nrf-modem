@@ -12,7 +12,7 @@ use at_commands::parser::CommandParser;
 use embassy_time::{Duration, Timer};
 use heapless::Vec;
 
-use crate::embassy_net_modem::CAP_SIZE;
+use crate::{embassy_net_modem::CAP_SIZE, Error};
 
 /// Provides a higher level API for controlling a given context.
 pub struct Control<'a> {
@@ -78,24 +78,6 @@ pub enum AuthProt {
     Chap = 2,
 }
 
-/// Error returned by control.
-#[derive(Clone, Copy, PartialEq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Error {
-    /// Not enough space for command.
-    BufferTooSmall,
-    /// Error parsing response from modem.
-    AtParseError,
-    /// Error parsing IP addresses.
-    AddrParseError,
-}
-
-impl From<at_commands::parser::ParseError> for Error {
-    fn from(_: at_commands::parser::ParseError) -> Self {
-        Self::AtParseError
-    }
-}
-
 /// Status of a given context.
 #[derive(PartialEq, Debug)]
 pub struct Status {
@@ -152,7 +134,7 @@ impl<'a> Control<'a> {
             .named("+CFUN")
             .with_int_parameter(0)
             .finish()
-            .map_err(|_| Error::BufferTooSmall)?;
+            .map_err(|s| Error::BufferTooSmall(Some(s)))?;
         let n = self.control.at_command(op).await;
         CommandParser::parse(n.as_bytes())
             .expect_identifier(b"OK")
@@ -165,7 +147,7 @@ impl<'a> Control<'a> {
         if let Some(apn) = config.apn {
             op = op.with_string_parameter(apn);
         }
-        let op = op.finish().map_err(|_| Error::BufferTooSmall)?;
+        let op = op.finish().map_err(|s| Error::BufferTooSmall(Some(s)))?;
 
         let n = self.control.at_command(op).await;
         // info!("RES1: {}", unsafe { core::str::from_utf8_unchecked(&buf[..n]) });
@@ -183,7 +165,7 @@ impl<'a> Control<'a> {
                     .with_string_parameter(username)
                     .with_string_parameter(password);
             }
-            let op = op.finish().map_err(|_| Error::BufferTooSmall)?;
+            let op = op.finish().map_err(|s| Error::BufferTooSmall(Some(s)))?;
 
             let n = self.control.at_command(op).await;
             // info!("RES2: {}", unsafe { core::str::from_utf8_unchecked(&buf[..n]) });
@@ -197,7 +179,7 @@ impl<'a> Control<'a> {
                 .named("+CPIN")
                 .with_string_parameter(pin)
                 .finish()
-                .map_err(|_| Error::BufferTooSmall)?;
+                .map_err(|s| Error::BufferTooSmall(Some(s)))?;
             let _ = self.control.at_command(op).await;
             // Ignore ERROR which means no pin required
         }
@@ -212,7 +194,7 @@ impl<'a> Control<'a> {
             .named("+CGATT")
             .with_int_parameter(1)
             .finish()
-            .map_err(|_| Error::BufferTooSmall)?;
+            .map_err(|s| Error::BufferTooSmall(Some(s)))?;
         let n = self.control.at_command(op).await;
         CommandParser::parse(n.as_bytes())
             .expect_identifier(b"OK")
@@ -227,7 +209,7 @@ impl<'a> Control<'a> {
             .named("+CGATT")
             .with_int_parameter(0)
             .finish()
-            .map_err(|_| Error::BufferTooSmall)?;
+            .map_err(|s| Error::BufferTooSmall(Some(s)))?;
         let n = self.control.at_command(op).await;
         CommandParser::parse(n.as_bytes())
             .expect_identifier(b"OK")
@@ -241,7 +223,7 @@ impl<'a> Control<'a> {
         let op = CommandBuilder::create_query(&mut cmd, true)
             .named("+CGATT")
             .finish()
-            .map_err(|_| Error::BufferTooSmall)?;
+            .map_err(|s| Error::BufferTooSmall(Some(s)))?;
         let n = self.control.at_command(op).await;
         let (res,) = CommandParser::parse(n.as_bytes())
             .expect_identifier(b"+CGATT: ")
@@ -258,7 +240,7 @@ impl<'a> Control<'a> {
         let op = CommandBuilder::create_query(&mut cmd, true)
             .named("+CGATT")
             .finish()
-            .map_err(|_| Error::BufferTooSmall)?;
+            .map_err(|s| Error::BufferTooSmall(Some(s)))?;
         let n = self.control.at_command(op).await;
         let (res,) = CommandParser::parse(n.as_bytes())
             .expect_identifier(b"+CGATT: ")
@@ -280,7 +262,7 @@ impl<'a> Control<'a> {
             .named("+CGPADDR")
             .with_int_parameter(self.cid)
             .finish()
-            .map_err(|_| Error::BufferTooSmall)?;
+            .map_err(|s| Error::BufferTooSmall(Some(s)))?;
         let n = self.control.at_command(op).await;
         let (_, ip1, ip2) = CommandParser::parse(n.as_bytes())
             .expect_identifier(b"+CGPADDR: ")
@@ -308,7 +290,7 @@ impl<'a> Control<'a> {
             .named("+CGCONTRDP")
             .with_int_parameter(self.cid)
             .finish()
-            .map_err(|_| Error::BufferTooSmall)?;
+            .map_err(|s| Error::BufferTooSmall(Some(s)))?;
         let n = self.control.at_command(op).await;
         let (_cid, _bid, _apn, _mask, gateway, dns1, dns2, _, _, _, _, _mtu) =
             CommandParser::parse(n.as_bytes())
@@ -374,7 +356,7 @@ impl<'a> Control<'a> {
             .named("+CFUN")
             .with_int_parameter(0)
             .finish()
-            .map_err(|_| Error::BufferTooSmall)?;
+            .map_err(|s| Error::BufferTooSmall(Some(s)))?;
         let n = self.control.at_command(op).await;
         CommandParser::parse(n.as_bytes())
             .expect_identifier(b"OK")
@@ -391,7 +373,7 @@ impl<'a> Control<'a> {
             .named("+CFUN")
             .with_int_parameter(1)
             .finish()
-            .map_err(|_| Error::BufferTooSmall)?;
+            .map_err(|s| Error::BufferTooSmall(Some(s)))?;
         let n = self.control.at_command(op).await;
         CommandParser::parse(n.as_bytes())
             .expect_identifier(b"OK")
@@ -402,7 +384,7 @@ impl<'a> Control<'a> {
             .named("%XPDNCFG")
             .with_int_parameter(1)
             .finish()
-            .map_err(|_| Error::BufferTooSmall)?;
+            .map_err(|s| Error::BufferTooSmall(Some(s)))?;
         let n = self.control.at_command(op).await;
         CommandParser::parse(n.as_bytes())
             .expect_identifier(b"OK")
