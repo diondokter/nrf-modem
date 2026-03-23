@@ -4,12 +4,12 @@
 // Licence: https://github.com/embassy-rs/embassy/blob/main/LICENSE-APACHE
 // Source file: https://github.com/embassy-rs/embassy/blob/a8cb8a7fe1f594b765dee4cfc6ff3065842c7c6e/embassy-net-nrf91/src/context.rs
 
+use core::cell::RefCell;
 use core::net::IpAddr;
 use core::str::FromStr;
 
 use at_commands::builder::CommandBuilder;
 use at_commands::parser::CommandParser;
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Timer};
 use heapless::Vec;
 
@@ -19,7 +19,8 @@ use crate::{embassy_net_modem::CAP_SIZE, Error, LteLink};
 pub struct Control<'a> {
     control: super::Control<'a>,
     cid: u8,
-    lte_link: Mutex<CriticalSectionRawMutex, Option<LteLink>>,
+    lte_link: RefCell<Option<LteLink>>,
+    needs_reconnect: RefCell<bool>,
 }
 
 /// Authentication parameters for the Packet Data Network (PDN).
@@ -118,7 +119,8 @@ impl<'a> Control<'a> {
         Self {
             control,
             cid,
-            lte_link: Mutex::new(None),
+            lte_link: RefCell::new(None),
+            needs_reconnect: RefCell::new(false),
         }
     }
 
@@ -136,7 +138,9 @@ impl<'a> Control<'a> {
     pub async fn configure(&self, config: &PdConfig<'_>, pin: Option<&[u8]>) -> Result<(), Error> {
         let mut cmd: [u8; 256] = [0; 256];
 
-        if let Some(link) = self.lte_link.lock().await.take() {
+        let link = self.lte_link.borrow_mut().take();
+
+        if let Some(link) = link {
             link.deactivate().await?;
         }
 
@@ -218,6 +222,11 @@ impl<'a> Control<'a> {
     }
 
     async fn attached(&self) -> Result<bool, Error> {
+        // We don't have a link, meaning the modem is disabled.
+        if self.lte_link.borrow().is_none() {
+            return Ok(false);
+        }
+
         let mut cmd: [u8; 256] = [0; 256];
 
         let op = CommandBuilder::create_query(&mut cmd, true)
@@ -350,9 +359,15 @@ impl<'a> Control<'a> {
 
     /// Disable modem
     pub async fn disable(&self) -> Result<(), Error> {
-        if let Some(link) = self.lte_link.lock().await.take() {
+        let link = self.lte_link.borrow_mut().take();
+        if let Some(link) = link {
             link.deactivate().await?;
         };
+
+        // Also close the current socket
+        self.control.close_raw_socket().await;
+
+        *self.needs_reconnect.borrow_mut() = true;
         Ok(())
     }
 
@@ -360,7 +375,10 @@ impl<'a> Control<'a> {
     pub async fn enable(&self) -> Result<(), Error> {
         let mut cmd: [u8; 256] = [0; 256];
 
-        self.lte_link.lock().await.replace(LteLink::new().await?);
+        if self.lte_link.borrow().is_none() {
+            let link = LteLink::new().await?;
+            self.lte_link.borrow_mut().replace(link);
+        }
 
         // Make modem survive PDN detaches
         let op = CommandBuilder::create_set(&mut cmd, true)
@@ -376,6 +394,7 @@ impl<'a> Control<'a> {
     }
 
     /// Run a control loop for this context, ensuring that reaattach is handled.
+    /// This also allows to reconnect after calling `Control::disable()` then `Control::enable()`.
     pub async fn run<F: Fn(&Status)>(&self, reattach: F) -> Result<(), Error> {
         self.enable().await?;
         let status = self.wait_attached().await?;
@@ -383,10 +402,11 @@ impl<'a> Control<'a> {
         reattach(&status);
 
         loop {
-            if !self.attached().await? {
+            if !self.attached().await? || *self.needs_reconnect.borrow() {
                 self.control.close_raw_socket().await;
                 let status = self.wait_attached().await?;
                 self.control.open_raw_socket().await;
+                *self.needs_reconnect.borrow_mut() = false;
                 reattach(&status);
             }
             Timer::after(Duration::from_secs(10)).await;
