@@ -60,7 +60,7 @@ pub enum Error {
     DnsParseFailed,
     #[cfg(feature = "embedded-nal-async")]
     ReverseDnsLookupNotSupported,
-    /// The address resturned by the modem couldn't be parsed
+    /// The address returned by the modem couldn't be parsed
     #[cfg(feature = "embassy-net")]
     AddrParseError,
 }
