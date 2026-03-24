@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.10.2 (2026-03-24)
+
+- Fix some IPv6 handling in the embassy-net support
+- Fix putting the modem in standby when using embassy-net
+
 ## 0.10.1 (2026-02-26)
 
 - Add minimal DECT-2020 NR+ support. Activate it using the `dect` feature on supported nRF91 devices.
