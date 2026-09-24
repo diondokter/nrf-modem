@@ -9,7 +9,6 @@ use embassy_executor::Spawner;
 use embassy_time::Timer;
 use nrf_modem::MemoryLayout;
 
-
 use dect_example::common::*;
 
 #[embassy_executor::main]

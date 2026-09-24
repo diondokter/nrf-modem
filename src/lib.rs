@@ -333,18 +333,20 @@ impl Default for MemoryLayout {
 }
 
 unsafe extern "C" fn modem_fault_handler(info: *mut nrfxlib_sys::nrf_modem_fault_info) {
-    #[cfg(feature = "defmt")]
-    defmt::panic!(
-        "Modem fault - reason: {}, pc: {}",
-        (*info).reason,
-        (*info).program_counter
-    );
-    #[cfg(not(feature = "defmt"))]
-    panic!(
-        "Modem fault - reason: {}, pc: {}",
-        (*info).reason,
-        (*info).program_counter
-    );
+    unsafe {
+        #[cfg(feature = "defmt")]
+        defmt::panic!(
+            "Modem fault - reason: {}, pc: {}",
+            (*info).reason,
+            (*info).program_counter
+        );
+        #[cfg(not(feature = "defmt"))]
+        panic!(
+            "Modem fault - reason: {}, pc: {}",
+            (*info).reason,
+            (*info).program_counter
+        );
+    }
 }
 
 unsafe extern "C" fn modem_dfu_handler(_val: u32) {
@@ -701,7 +703,7 @@ pub fn has_runtime_state_error() -> bool {
 ///
 /// This function may only be used when you've made sure that **no** active LteLinks instances and Gnss instances exist
 pub async unsafe fn reset_runtime_state() -> Result<(), Error> {
-    MODEM_RUNTIME_STATE.reset_runtime_state().await
+    unsafe { MODEM_RUNTIME_STATE.reset_runtime_state().await }
 }
 
 enum ModemDeactivation {

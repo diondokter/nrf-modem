@@ -1,11 +1,10 @@
 use crate::{
-    dns,
+    CancellationToken, LteLink, dns,
     error::Error,
     socket::{
         CipherSuite, PeerVerification, Socket, SocketFamily, SocketOption, SocketProtocol,
         SocketType, SplitSocketHandle,
     },
-    CancellationToken, LteLink,
 };
 use core::net::SocketAddr;
 

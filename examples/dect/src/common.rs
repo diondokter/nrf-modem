@@ -27,7 +27,7 @@ bind_interrupts!(struct Irqs{
     IPC => InterruptHandler;
 });
 
-extern "C" {
+unsafe extern "C" {
     static __start_ipc: u8;
     static __end_ipc: u8;
 }

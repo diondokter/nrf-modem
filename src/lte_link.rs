@@ -1,6 +1,6 @@
 //! Implementation of [LteLink]
 
-use crate::{at, at_notifications::AtNotificationStream, error::Error, CancellationToken};
+use crate::{CancellationToken, at, at_notifications::AtNotificationStream, error::Error};
 use core::{mem, ops::ControlFlow, task::Poll};
 
 /// An object that keeps the modem connected.

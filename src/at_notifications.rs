@@ -11,12 +11,11 @@ static WAKER_NODE_LIST: Mutex<RefCell<WakerNodeList<dyn NotificationBuffer>>> =
 
 pub(crate) unsafe extern "C" fn at_notification_handler(notif: *const core::ffi::c_char) {
     #[cfg(feature = "defmt")]
-    defmt::trace!(
-        "AT notification <- {}",
+    defmt::trace!("AT notification <- {}", unsafe {
         core::ffi::CStr::from_ptr(notif as *const _)
             .to_str()
             .unwrap()
-    );
+    });
 
     critical_section::with(|cs| {
         WAKER_NODE_LIST
