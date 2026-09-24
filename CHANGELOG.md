@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0 (2026-09-24)
+
 - *Breaking*: Update heapless to 0.9
 - *Breaking*: Update nrfxlib-sys to 4.0.0
 - *Breaking*: Update embassy-net-driver-channel to 0.4.0
