@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- *Breaking*: Update heapless to 0.9
+- *Breaking*: Update nrfxlib-sys to 4.0.0
+- *Breaking*: Update embassy-net-driver-channel to 0.4.0
+
 ## 0.10.2 (2026-03-24)
 
 - Fix some IPv6 handling in the embassy-net support

@@ -236,7 +236,7 @@ dependencies = [
  "defmt-rtt",
  "embassy-executor",
  "embassy-nrf",
- "embassy-sync",
+ "embassy-sync 0.7.2",
  "embassy-time",
  "heapless 0.9.3",
  "nrf-modem",
@@ -310,7 +310,7 @@ dependencies = [
  "defmt",
  "embassy-futures",
  "embassy-hal-internal",
- "embassy-sync",
+ "embassy-sync 0.7.2",
  "embassy-time",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
@@ -385,7 +385,7 @@ dependencies = [
  "document-features",
  "embassy-embedded-hal",
  "embassy-hal-internal",
- "embassy-sync",
+ "embassy-sync 0.7.2",
  "embassy-time",
  "embassy-time-driver",
  "embassy-time-queue-utils",
@@ -416,6 +416,20 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "heapless 0.8.0",
+]
+
+[[package]]
+name = "embassy-sync"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7bbd85cf5a5ae56bdf26f618364af642d1d0a4e245cdd75cd9aabda382f65a81"
+dependencies = [
+ "cfg-if",
+ "critical-section",
+ "embedded-io-async 0.7.0",
+ "futures-core",
+ "futures-sink",
+ "heapless 0.9.3",
 ]
 
 [[package]]
@@ -792,7 +806,7 @@ dependencies = [
 
 [[package]]
 name = "nrf-modem"
-version = "0.10.2"
+version = "0.11.0"
 dependencies = [
  "arrayvec",
  "at-commands",
@@ -800,7 +814,7 @@ dependencies = [
  "cortex-m",
  "critical-section",
  "defmt",
- "embassy-sync",
+ "embassy-sync 0.8.0",
  "embedded-io-async 0.7.0",
  "futures",
  "grounded",
@@ -832,9 +846,9 @@ dependencies = [
 
 [[package]]
 name = "nrfxlib-sys"
-version = "3.1.0+3.3.0"
+version = "4.0.0+3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d024684e50e75bf8fb8d9e735b8cf5f213d615f1818825db79d6ffe6d3a12af3"
+checksum = "75d69730945848bf3bbd234f503502e208aa593a94b8c2f1737d50b0fcf23a82"
 dependencies = [
  "bindgen",
  "llvm-tools",
