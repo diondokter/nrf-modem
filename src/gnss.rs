@@ -2,13 +2,13 @@ use crate::error::{Error, ErrorSource};
 use arrayvec::{ArrayString, ArrayVec};
 use core::{
     cell::RefCell,
-    mem::{size_of, MaybeUninit},
+    mem::{MaybeUninit, size_of},
     pin::Pin,
     sync::atomic::{AtomicU32, Ordering},
     task::{Context, Poll},
 };
 use critical_section::Mutex;
-use futures::{task::AtomicWaker, Stream};
+use futures::{Stream, task::AtomicWaker};
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
 const MAX_NMEA_BURST_SIZE: usize = 5;

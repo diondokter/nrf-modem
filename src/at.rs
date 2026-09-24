@@ -32,33 +32,35 @@ static AT_DATA_WAKER: AtomicWaker = AtomicWaker::new();
 /// The callback that will be called by nrfxlib when the at command has a response.
 /// The `resp` is a null-terminated string.
 unsafe extern "C" fn at_callback(resp: *const core::ffi::c_char) {
-    #[cfg(feature = "defmt")]
-    defmt::trace!(
-        "AT <- {}",
-        core::ffi::CStr::from_ptr(resp as _).to_str().unwrap()
-    );
+    unsafe {
+        #[cfg(feature = "defmt")]
+        defmt::trace!(
+            "AT <- {}",
+            core::ffi::CStr::from_ptr(resp as _).to_str().unwrap()
+        );
 
-    // Store the data and wake the future that waits for it
-    critical_section::with(|cs| {
-        let mut data = AT_DATA.borrow_ref_mut(cs);
-        let (ptr, size) = data.deref_mut();
+        // Store the data and wake the future that waits for it
+        critical_section::with(|cs| {
+            let mut data = AT_DATA.borrow_ref_mut(cs);
+            let (ptr, size) = data.deref_mut();
 
-        if ptr.get_mut().is_null() {
-            return;
-        }
+            if ptr.get_mut().is_null() {
+                return;
+            }
 
-        // Copy the contents
-        let mut index = 0;
-        while index < *size && *resp.add(index) != 0 {
-            *ptr.get_mut().add(index) = *resp.add(index) as _;
-            index += 1;
-        }
+            // Copy the contents
+            let mut index = 0;
+            while index < *size && *resp.add(index) != 0 {
+                *ptr.get_mut().add(index) = *resp.add(index) as _;
+                index += 1;
+            }
 
-        // Reset the data so that the future knows that the callback was called
-        *ptr = AtomicPtr::default();
-        *size = 0;
-    });
-    AT_DATA_WAKER.wake();
+            // Reset the data so that the future knows that the callback was called
+            *ptr = AtomicPtr::default();
+            *size = 0;
+        });
+        AT_DATA_WAKER.wake();
+    }
 }
 
 /// Send an AT command to the modem.

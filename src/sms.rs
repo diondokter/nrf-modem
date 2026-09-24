@@ -1,4 +1,4 @@
-use crate::{error::Error, send_at, LteLink};
+use crate::{LteLink, error::Error, send_at};
 use arrayvec::{ArrayString, ArrayVec};
 use core::{fmt::Write, write};
 
@@ -164,7 +164,7 @@ impl<'a> Sms<'a> {
 
         let mut at_cmgs: ArrayString<N> = ArrayString::new();
         let mut encoded_number_len = encoded_number.len();
-        if self.number.trim_start_matches('+').len() % 2 != 0 {
+        if !self.number.trim_start_matches('+').len().is_multiple_of(2) {
             encoded_number_len -= 1;
         }
         // Write the at command and begin with encoded number and it's lenght

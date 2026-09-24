@@ -94,7 +94,10 @@ fn log_data(data: &[u8]) {
             let seqno = (data[1] as u16 & 0x0f) << 8 | (data[2] as u16);
 
             let transmitter = &data[4..8];
-            info!("DATA MAC PDU details: reset {}, seqno {}, transmitter {:x}", reset, seqno, transmitter);
+            info!(
+                "DATA MAC PDU details: reset {}, seqno {}, transmitter {:x}",
+                reset, seqno, transmitter
+            );
             3
         }
         numbers::mac_pdu::header_type::BEACON => {
@@ -211,5 +214,7 @@ async fn main(_spawner: Spawner) {
         Timer::after_millis(500).await;
     }
 
-    panic!("If we want to be able to re-flash, we better things at some point to avoid going through unlock again.");
+    panic!(
+        "If we want to be able to re-flash, we better things at some point to avoid going through unlock again."
+    );
 }

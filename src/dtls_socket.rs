@@ -1,8 +1,7 @@
 use crate::{
-    dns,
+    CancellationToken, CipherSuite, PeerVerification, dns,
     error::Error,
     socket::{Socket, SocketFamily, SocketOption, SocketProtocol, SocketType, SplitSocketHandle},
-    CancellationToken, CipherSuite, PeerVerification,
 };
 
 use core::net::SocketAddr;

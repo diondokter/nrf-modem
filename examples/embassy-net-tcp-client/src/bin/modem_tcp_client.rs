@@ -16,8 +16,8 @@ use embassy_time::{Duration, Timer};
 use embedded_io_async::Write;
 use heapless::Vec;
 use nrf_modem::embassy_net_modem::{
-    context::{self, PdConfig, PdpType, Status},
     NetDriver, Runner, State,
+    context::{self, PdConfig, PdpType, Status},
 };
 use nrf_modem::{ConnectionPreference, MemoryLayout, SystemMode};
 use static_cell::StaticCell;
@@ -123,7 +123,7 @@ pub async fn init<'a>(spawner: Spawner) -> (NetworkDevice, &'a context::Control<
     (driver, control)
 }
 
-extern "C" {
+unsafe extern "C" {
     static __start_ipc: u8;
     static __end_ipc: u8;
 }

@@ -1,5 +1,5 @@
 use crate::{
-    error::Error, ffi::get_last_error, ip::NrfSockAddr, lte_link::LteLink, CancellationToken,
+    CancellationToken, error::Error, ffi::get_last_error, ip::NrfSockAddr, lte_link::LteLink,
 };
 use core::net::SocketAddr;
 use core::{
@@ -67,34 +67,36 @@ fn register_socket_waker(waker: Waker, socket_fd: i32, socket_dir: SocketDirecti
 }
 
 unsafe extern "C" fn socket_poll_callback(pollfd: *mut nrfxlib_sys::nrf_pollfd) {
-    let pollfd = *pollfd;
+    unsafe {
+        let pollfd = *pollfd;
 
-    let mut direction = SocketDirection::Neither;
+        let mut direction = SocketDirection::Neither;
 
-    if pollfd.revents as u32 & nrfxlib_sys::NRF_POLLIN != 0 {
-        direction |= SocketDirection::In;
+        if pollfd.revents as u32 & nrfxlib_sys::NRF_POLLIN != 0 {
+            direction |= SocketDirection::In;
+        }
+
+        if pollfd.revents as u32 & nrfxlib_sys::NRF_POLLOUT != 0 {
+            direction |= SocketDirection::Out;
+        }
+
+        if pollfd.revents as u32
+            & (nrfxlib_sys::NRF_POLLERR | nrfxlib_sys::NRF_POLLHUP | nrfxlib_sys::NRF_POLLNVAL)
+            != 0
+        {
+            direction |= SocketDirection::Either;
+        }
+
+        #[cfg(feature = "defmt")]
+        defmt::trace!(
+            "Socket poll callback. fd: {}, revents: {:X}, direction: {}",
+            pollfd.fd,
+            pollfd.revents,
+            direction
+        );
+
+        wake_sockets(pollfd.fd, direction);
     }
-
-    if pollfd.revents as u32 & nrfxlib_sys::NRF_POLLOUT != 0 {
-        direction |= SocketDirection::Out;
-    }
-
-    if pollfd.revents as u32
-        & (nrfxlib_sys::NRF_POLLERR | nrfxlib_sys::NRF_POLLHUP | nrfxlib_sys::NRF_POLLNVAL)
-        != 0
-    {
-        direction |= SocketDirection::Either;
-    }
-
-    #[cfg(feature = "defmt")]
-    defmt::trace!(
-        "Socket poll callback. fd: {}, revents: {:X}, direction: {}",
-        pollfd.fd,
-        pollfd.revents,
-        direction
-    );
-
-    wake_sockets(pollfd.fd, direction);
 }
 
 /// Used as a identifier for wakers when a socket is split into RX/TX halves
@@ -1199,11 +1201,11 @@ impl Deref for SplitSocketHandle {
 
 impl Drop for SplitSocketHandle {
     fn drop(&mut self) {
-        if let Some(inner) = self.inner.as_mut() {
-            if ACTIVE_SPLIT_SOCKETS[self.index].fetch_sub(1, Ordering::SeqCst) == 1 {
-                // We were the last handle to drop so the inner socket isn't split anymore
-                inner.split = false;
-            }
+        if let Some(inner) = self.inner.as_mut()
+            && ACTIVE_SPLIT_SOCKETS[self.index].fetch_sub(1, Ordering::SeqCst) == 1
+        {
+            // We were the last handle to drop so the inner socket isn't split anymore
+            inner.split = false;
         }
     }
 }

@@ -13,7 +13,7 @@ use at_commands::parser::CommandParser;
 use embassy_time::{Duration, Timer};
 use heapless::Vec;
 
-use crate::{embassy_net_modem::CAP_SIZE, Error, LteLink};
+use crate::{Error, LteLink, embassy_net_modem::CAP_SIZE};
 
 const DNS_VEC_SIZE: usize = 2;
 
@@ -182,36 +182,36 @@ fn parse_cgcontrdp_section(at_part: &str) -> Result<Option<CgcontrdpOutputKind>,
         )
     }
     let mut dns: Vec<IpAddr, DNS_VEC_SIZE> = Vec::new();
-    if let Some(ip) = dns1 {
-        if !ip.is_empty() {
-            let parsed = IpAddr::from_str(ip).map_err(|_| Error::AddrParseError)?;
-            match parsed {
-                IpAddr::V4(_) => {
-                    is_ipv4.replace(true);
-                }
-                IpAddr::V6(_) => {
-                    is_ipv4.replace(false);
-                }
+    if let Some(ip) = dns1
+        && !ip.is_empty()
+    {
+        let parsed = IpAddr::from_str(ip).map_err(|_| Error::AddrParseError)?;
+        match parsed {
+            IpAddr::V4(_) => {
+                is_ipv4.replace(true);
             }
-            // Won't panic as we never push more than 2 elements
-            dns.push(parsed).unwrap();
+            IpAddr::V6(_) => {
+                is_ipv4.replace(false);
+            }
         }
+        // Won't panic as we never push more than 2 elements
+        dns.push(parsed).unwrap();
     }
 
-    if let Some(ip) = dns2 {
-        if !ip.is_empty() {
-            let parsed = IpAddr::from_str(ip).map_err(|_| Error::AddrParseError)?;
-            match parsed {
-                IpAddr::V4(_) => {
-                    is_ipv4.replace(true);
-                }
-                IpAddr::V6(_) => {
-                    is_ipv4.replace(false);
-                }
+    if let Some(ip) = dns2
+        && !ip.is_empty()
+    {
+        let parsed = IpAddr::from_str(ip).map_err(|_| Error::AddrParseError)?;
+        match parsed {
+            IpAddr::V4(_) => {
+                is_ipv4.replace(true);
             }
-            // Won't panic as we never push more than 2 elements
-            dns.push(parsed).unwrap();
+            IpAddr::V6(_) => {
+                is_ipv4.replace(false);
+            }
         }
+        // Won't panic as we never push more than 2 elements
+        dns.push(parsed).unwrap();
     }
 
     match is_ipv4 {

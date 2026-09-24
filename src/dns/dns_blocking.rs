@@ -1,4 +1,4 @@
-use crate::{ip::NrfSockAddr, lte_link::LteLink, CancellationToken, Error};
+use crate::{CancellationToken, Error, ip::NrfSockAddr, lte_link::LteLink};
 use arrayvec::ArrayString;
 use core::net::{IpAddr, SocketAddr};
 use core::str::FromStr;

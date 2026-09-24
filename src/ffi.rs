@@ -89,19 +89,19 @@ static IPC_CONTEXT: core::sync::atomic::AtomicUsize = core::sync::atomic::Atomic
 static IPC_HANDLER: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
 /// Function required by BSD library. We have no init to do.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_init() {
     // Nothing
 }
 
 /// Function required by BSD library. We have no shutdown to do.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_shutdown() {
     // Nothing
 }
 
 /// Function required by BSD library. Stores an error code we can read later.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_errno_set(errno: isize) {
     LAST_ERROR.store(errno, core::sync::atomic::Ordering::SeqCst);
 }
@@ -112,7 +112,7 @@ pub fn get_last_error() -> isize {
 }
 
 /// Function required by BSD library
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_busywait(usec: i32) {
     if usec > 0 {
         // The nRF91* Arm Cortex-M33 runs at 64 MHz, so this is close enough
@@ -133,35 +133,37 @@ pub extern "C" fn nrf_modem_os_busywait(usec: i32) {
 /// - 0 – The thread is woken before the timeout expired.
 /// - -NRF_EAGAIN – The timeout expired.
 /// - -NRF_ESHUTDOWN – Modem is not initialized, or was shut down.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nrf_modem_os_timedwait(_context: u32, timeout: *mut i32) -> i32 {
-    if nrf_modem_os_is_in_isr() {
-        return -(nrfxlib_sys::NRF_EPERM as i32);
-    }
+    unsafe {
+        if nrf_modem_os_is_in_isr() {
+            return -(nrfxlib_sys::NRF_EPERM as i32);
+        }
 
-    // For DECT we can not rely on this check: The DECT libmodem already calls
-    // nrf_modem_os_timedwait during its initialization before it sets the is_initialized bit.
-    #[cfg(not(feature = "dect"))]
-    if !nrfxlib_sys::nrf_modem_is_initialized() {
-        return -(nrfxlib_sys::NRF_ESHUTDOWN as i32);
-    }
+        // For DECT we can not rely on this check: The DECT libmodem already calls
+        // nrf_modem_os_timedwait during its initialization before it sets the is_initialized bit.
+        #[cfg(not(feature = "dect"))]
+        if !nrfxlib_sys::nrf_modem_is_initialized() {
+            return -(nrfxlib_sys::NRF_ESHUTDOWN as i32);
+        }
 
-    if *timeout < -2 {
-        // With Zephyr, negative timeouts pend on a semaphore with K_FOREVER.
-        // We can't do that here.
-        0i32
-    } else {
-        loop {
-            nrf_modem_os_busywait(1000);
+        if *timeout < -2 {
+            // With Zephyr, negative timeouts pend on a semaphore with K_FOREVER.
+            // We can't do that here.
+            0i32
+        } else {
+            loop {
+                nrf_modem_os_busywait(1000);
 
-            if NOTIFY_ACTIVE.swap(false, Ordering::Relaxed) {
-                return 0;
-            }
+                if NOTIFY_ACTIVE.swap(false, Ordering::Relaxed) {
+                    return 0;
+                }
 
-            match *timeout {
-                -1 => continue,
-                0 => return -(nrfxlib_sys::NRF_EAGAIN as i32),
-                _ => *timeout -= 1,
+                match *timeout {
+                    -1 => continue,
+                    0 => return -(nrfxlib_sys::NRF_EAGAIN as i32),
+                    _ => *timeout -= 1,
+                }
             }
         }
     }
@@ -170,7 +172,7 @@ pub unsafe extern "C" fn nrf_modem_os_timedwait(_context: u32, timeout: *mut i32
 /// Notify the application that an event has occurred.
 ///
 /// This function shall wake all threads sleeping in nrf_modem_os_timedwait.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_event_notify() {
     NOTIFY_ACTIVE.store(true, Ordering::SeqCst);
 }
@@ -181,7 +183,7 @@ pub extern "C" fn nrf_modem_os_event_notify() {
 /// modem core. This memory is never shared with the modem core and hence, it
 /// can be located anywhere in the application core's RAM instead of the shared
 /// memory regions. This function allocates dynamic memory for the library.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_alloc(num_bytes_requested: usize) -> *mut u8 {
     unsafe { generic_alloc(num_bytes_requested, &crate::LIBRARY_ALLOCATOR) }
 }
@@ -192,16 +194,18 @@ pub extern "C" fn nrf_modem_os_alloc(num_bytes_requested: usize) -> *mut u8 {
 /// modem core. This memory is never shared with the modem core and hence, it
 /// can be located anywhere in the application core's RAM instead of the shared
 /// memory regions. This function allocates dynamic memory for the library.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nrf_modem_os_free(ptr: *mut u8) {
-    generic_free(ptr, &crate::LIBRARY_ALLOCATOR);
+    unsafe {
+        generic_free(ptr, &crate::LIBRARY_ALLOCATOR);
+    }
 }
 
 /// Allocate a buffer on the TX area of shared memory.
 ///
 /// @param bytes Buffer size.
 /// @return pointer to allocated memory
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_shm_tx_alloc(num_bytes_requested: usize) -> *mut u8 {
     unsafe { generic_alloc(num_bytes_requested, &crate::TX_ALLOCATOR) }
 }
@@ -209,30 +213,34 @@ pub extern "C" fn nrf_modem_os_shm_tx_alloc(num_bytes_requested: usize) -> *mut 
 /// Free a shared memory buffer in the TX area.
 ///
 /// @param ptr Th buffer to free.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nrf_modem_os_shm_tx_free(ptr: *mut u8) {
-    generic_free(ptr, &crate::TX_ALLOCATOR);
+    unsafe {
+        generic_free(ptr, &crate::TX_ALLOCATOR);
+    }
 }
 
 /// @brief Function for loading configuration directly into IPC peripheral.
 ///
 /// @param p_config Pointer to the structure with the initial configuration.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nrfx_ipc_config_load(p_config: *const NrfxIpcConfig) {
-    let config: &NrfxIpcConfig = &*p_config;
+    unsafe {
+        let config: &NrfxIpcConfig = &*p_config;
 
-    let ipc = &(*pac::IPC_NS::ptr());
+        let ipc = &(*pac::IPC_NS::ptr());
 
-    for (i, value) in config.send_task_config.iter().enumerate() {
-        ipc.send_cnf[i].write(|w| w.bits(*value));
+        for (i, value) in config.send_task_config.iter().enumerate() {
+            ipc.send_cnf[i].write(|w| w.bits(*value));
+        }
+
+        for (i, value) in config.receive_event_config.iter().enumerate() {
+            ipc.receive_cnf[i].write(|w| w.bits(*value));
+        }
+
+        ipc.intenset
+            .write(|w| w.bits(config.receive_events_enabled));
     }
-
-    for (i, value) in config.receive_event_config.iter().enumerate() {
-        ipc.receive_cnf[i].write(|w| w.bits(*value));
-    }
-
-    ipc.intenset
-        .write(|w| w.bits(config.receive_events_enabled));
 }
 
 /// @brief Function for initializing the IPC driver.
@@ -243,7 +251,7 @@ pub unsafe extern "C" fn nrfx_ipc_config_load(p_config: *const NrfxIpcConfig) {
 ///
 /// @retval NRFX_SUCCESS             Initialization was successful.
 /// @retval NRFX_ERROR_INVALID_STATE Driver is already initialized.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrfx_ipc_init(
     irq_priority: u8,
     handler: NrfxIpcHandler,
@@ -263,29 +271,29 @@ pub extern "C" fn nrfx_ipc_init(
 }
 
 /// Function for uninitializing the IPC module.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrfx_ipc_uninit() {
     let ipc = unsafe { &(*pac::IPC_NS::ptr()) };
 
-    for i in 0..IPC_CONF_NUM {
-        ipc.send_cnf[i].reset();
+    for reg in ipc.send_cnf.iter() {
+        reg.reset();
     }
 
-    for i in 0..IPC_CONF_NUM {
-        ipc.receive_cnf[i].reset();
+    for reg in ipc.receive_cnf.iter() {
+        reg.reset();
     }
 
     ipc.intenset.reset();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrfx_ipc_receive_event_enable(event_index: u8) {
     let ipc = unsafe { &(*pac::IPC_NS::ptr()) };
     ipc.inten
         .modify(|r, w| unsafe { w.bits(r.bits() | 1 << event_index) })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrfx_ipc_receive_event_disable(event_index: u8) {
     let ipc = unsafe { &(*pac::IPC_NS::ptr()) };
     ipc.inten
@@ -299,28 +307,33 @@ pub extern "C" fn nrfx_ipc_receive_event_disable(event_index: u8) {
 ///
 /// This function is safe to call from an ISR.
 unsafe fn generic_alloc(num_bytes_requested: usize, heap: &crate::WrappedHeap) -> *mut u8 {
-    let sizeof_usize = core::mem::size_of::<usize>();
-    let mut result = core::ptr::null_mut();
-    critical_section::with(|cs| {
-        let num_bytes_allocated = num_bytes_requested + sizeof_usize;
-        let layout =
-            core::alloc::Layout::from_size_align_unchecked(num_bytes_allocated, sizeof_usize);
-        if let Some(ref mut inner_alloc) = *heap.borrow(cs).borrow_mut() {
-            match inner_alloc.allocate_first_fit(layout) {
-                Ok(real_block) => {
-                    let real_ptr = real_block.as_ptr();
-                    // We need the block size to run the de-allocation. Store it in the first four bytes.
-                    core::ptr::write_volatile::<usize>(real_ptr as *mut usize, num_bytes_allocated);
-                    // Give them the rest of the block
-                    result = real_ptr.add(sizeof_usize);
-                }
-                Err(_e) => {
-                    // Ignore
+    unsafe {
+        let sizeof_usize = core::mem::size_of::<usize>();
+        let mut result = core::ptr::null_mut();
+        critical_section::with(|cs| {
+            let num_bytes_allocated = num_bytes_requested + sizeof_usize;
+            let layout =
+                core::alloc::Layout::from_size_align_unchecked(num_bytes_allocated, sizeof_usize);
+            if let Some(ref mut inner_alloc) = *heap.borrow(cs).borrow_mut() {
+                match inner_alloc.allocate_first_fit(layout) {
+                    Ok(real_block) => {
+                        let real_ptr = real_block.as_ptr();
+                        // We need the block size to run the de-allocation. Store it in the first four bytes.
+                        core::ptr::write_volatile::<usize>(
+                            real_ptr as *mut usize,
+                            num_bytes_allocated,
+                        );
+                        // Give them the rest of the block
+                        result = real_ptr.add(sizeof_usize);
+                    }
+                    Err(_e) => {
+                        // Ignore
+                    }
                 }
             }
-        }
-    });
-    result
+        });
+        result
+    }
 }
 
 /// Free some memory back on to the given heap.
@@ -331,19 +344,21 @@ unsafe fn generic_alloc(num_bytes_requested: usize, heap: &crate::WrappedHeap) -
 ///
 /// This function is safe to call from an ISR.
 unsafe fn generic_free(ptr: *mut u8, heap: &crate::WrappedHeap) {
-    let sizeof_usize = core::mem::size_of::<usize>() as isize;
-    critical_section::with(|cs| {
-        // Fetch the size from the previous four bytes
-        let real_ptr = ptr.offset(-sizeof_usize);
-        let num_bytes_allocated = core::ptr::read_volatile::<usize>(real_ptr as *const usize);
-        let layout = core::alloc::Layout::from_size_align_unchecked(
-            num_bytes_allocated,
-            sizeof_usize as usize,
-        );
-        if let Some(ref mut inner_alloc) = *heap.borrow(cs).borrow_mut() {
-            inner_alloc.deallocate(core::ptr::NonNull::new_unchecked(real_ptr), layout);
-        }
-    });
+    unsafe {
+        let sizeof_usize = core::mem::size_of::<usize>() as isize;
+        critical_section::with(|cs| {
+            // Fetch the size from the previous four bytes
+            let real_ptr = ptr.offset(-sizeof_usize);
+            let num_bytes_allocated = core::ptr::read_volatile::<usize>(real_ptr as *const usize);
+            let layout = core::alloc::Layout::from_size_align_unchecked(
+                num_bytes_allocated,
+                sizeof_usize as usize,
+            );
+            if let Some(ref mut inner_alloc) = *heap.borrow(cs).borrow_mut() {
+                inner_alloc.deallocate(core::ptr::NonNull::new_unchecked(real_ptr), layout);
+            }
+        });
+    }
 }
 
 /// Call this when we have an IPC IRQ. Not `extern C` as its not called by the
@@ -351,34 +366,36 @@ unsafe fn generic_free(ptr: *mut u8, heap: &crate::WrappedHeap) {
 // This function seems to be based on this verion in C:
 // https://github.com/NordicSemiconductor/nrfx/blob/98d6f433313a3d8dcf08dce25e744617b45aa913/drivers/src/nrfx_ipc.c#L146-L163
 pub unsafe fn nrf_ipc_irq_handler() {
-    // Get the information about events that fired this interrupt
-    let events_map = (*pac::IPC_NS::ptr()).intpend.read().bits();
+    unsafe {
+        // Get the information about events that fired this interrupt
+        let events_map = (*pac::IPC_NS::ptr()).intpend.read().bits();
 
-    // Fetch interrupt handler and context to use during event resolution
-    let handler_addr = IPC_HANDLER.load(core::sync::atomic::Ordering::SeqCst);
-    let handler = if handler_addr != 0 {
-        let handler = core::mem::transmute::<usize, NrfxIpcHandler>(handler_addr);
-        Some(handler)
-    } else {
-        #[cfg(feature = "defmt")]
-        defmt::warn!("No IPC handler registered");
-        None
-    };
-    let context = IPC_CONTEXT.load(core::sync::atomic::Ordering::SeqCst);
+        // Fetch interrupt handler and context to use during event resolution
+        let handler_addr = IPC_HANDLER.load(core::sync::atomic::Ordering::SeqCst);
+        let handler = if handler_addr != 0 {
+            let handler = core::mem::transmute::<usize, NrfxIpcHandler>(handler_addr);
+            Some(handler)
+        } else {
+            #[cfg(feature = "defmt")]
+            defmt::warn!("No IPC handler registered");
+            None
+        };
+        let context = IPC_CONTEXT.load(core::sync::atomic::Ordering::SeqCst);
 
-    // Clear these events
-    let mut bitmask = events_map;
-    while bitmask != 0 {
-        let event_idx = bitmask.trailing_zeros();
-        bitmask &= !(1 << event_idx);
-        (*pac::IPC_NS::ptr()).events_receive[event_idx as usize].write(|w| w.bits(0));
+        // Clear these events
+        let mut bitmask = events_map;
+        while bitmask != 0 {
+            let event_idx = bitmask.trailing_zeros();
+            bitmask &= !(1 << event_idx);
+            (*pac::IPC_NS::ptr()).events_receive[event_idx as usize].write(|w| w.bits(0));
 
-        // Execute interrupt handler to provide information about events to app
-        if let Some(handler) = handler {
-            let event_idx = event_idx
-                .try_into()
-                .expect("A u32 has less then 255 trailing zeroes");
-            (handler)(event_idx, context as *mut u8);
+            // Execute interrupt handler to provide information about events to app
+            if let Some(handler) = handler {
+                let event_idx = event_idx
+                    .try_into()
+                    .expect("A u32 has less then 255 trailing zeroes");
+                (handler)(event_idx, context as *mut u8);
+            }
         }
     }
 }
@@ -395,42 +412,44 @@ pub unsafe fn nrf_ipc_irq_handler() {
 ///
 /// **Returns**
 /// - 0 on success, a negative errno otherwise.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nrf_modem_os_sem_init(
     sem: *mut *mut core::ffi::c_void,
     initial_count: core::ffi::c_uint,
     limit: core::ffi::c_uint,
 ) -> core::ffi::c_int {
-    if sem.is_null() || initial_count > limit {
-        #[cfg(feature = "defmt")]
-        defmt::error!(
-            "Failed to init semaphore: {} || {} > {}",
-            sem.is_null(),
-            initial_count,
-            limit
-        );
-        return -(nrfxlib_sys::NRF_EINVAL as i32);
-    }
-
-    // Allocate if we need to
-    if (*sem).is_null() {
-        // Allocate our semaphore datastructure
-        *sem = nrf_modem_os_alloc(core::mem::size_of::<Semaphore>()) as *mut _;
-
-        if (*sem).is_null() {
+    unsafe {
+        if sem.is_null() || initial_count > limit {
             #[cfg(feature = "defmt")]
-            defmt::error!("Failed to init semaphore: out of memory");
-            return -(nrfxlib_sys::NRF_ENOMEM as i32);
+            defmt::error!(
+                "Failed to init semaphore: {} || {} > {}",
+                sem.is_null(),
+                initial_count,
+                limit
+            );
+            return -(nrfxlib_sys::NRF_EINVAL as i32);
         }
+
+        // Allocate if we need to
+        if (*sem).is_null() {
+            // Allocate our semaphore datastructure
+            *sem = nrf_modem_os_alloc(core::mem::size_of::<Semaphore>()) as *mut _;
+
+            if (*sem).is_null() {
+                #[cfg(feature = "defmt")]
+                defmt::error!("Failed to init semaphore: out of memory");
+                return -(nrfxlib_sys::NRF_ENOMEM as i32);
+            }
+        }
+
+        // Initialize the data
+        *((*sem) as *mut Semaphore) = Semaphore {
+            max_value: limit,
+            current_value: AtomicU32::new(initial_count),
+        };
+
+        0
     }
-
-    // Initialize the data
-    *((*sem) as *mut Semaphore) = Semaphore {
-        max_value: limit,
-        current_value: AtomicU32::new(initial_count),
-    };
-
-    0
 }
 
 /// Give a semaphore.
@@ -439,7 +458,7 @@ pub unsafe extern "C" fn nrf_modem_os_sem_init(
 ///
 /// **Parameters**
 /// - sem – The semaphore.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_sem_give(sem: *mut core::ffi::c_void) {
     unsafe {
         if sem.is_null() {
@@ -449,7 +468,7 @@ pub extern "C" fn nrf_modem_os_sem_give(sem: *mut core::ffi::c_void) {
         let max_value = (*(sem as *mut Semaphore)).max_value;
         (*(sem as *mut Semaphore))
             .current_value
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |val| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |val| {
                 (val < max_value).then_some(val + 1)
             })
             .ok();
@@ -467,7 +486,7 @@ pub extern "C" fn nrf_modem_os_sem_give(sem: *mut core::ffi::c_void) {
 /// **Return values**
 /// - 0 – on success.
 /// - -NRF_EAGAIN – If the semaphore could not be taken.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_sem_take(
     sem: *mut core::ffi::c_void,
     mut timeout: core::ffi::c_int,
@@ -484,12 +503,8 @@ pub extern "C" fn nrf_modem_os_sem_take(
         loop {
             if (*(sem as *mut Semaphore))
                 .current_value
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |val| {
-                    if val > 0 {
-                        Some(val - 1)
-                    } else {
-                        None
-                    }
+                .try_update(Ordering::SeqCst, Ordering::SeqCst, |val| {
+                    if val > 0 { Some(val - 1) } else { None }
                 })
                 .is_ok()
             {
@@ -517,7 +532,7 @@ pub extern "C" fn nrf_modem_os_sem_take(
 ///
 /// **Returns**
 /// - Current semaphore count.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_sem_count_get(sem: *mut core::ffi::c_void) -> core::ffi::c_uint {
     unsafe {
         if sem.is_null() {
@@ -536,7 +551,7 @@ struct Semaphore {
 }
 
 /// Check if executing in interrupt context.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_is_in_isr() -> bool {
     #[cfg(feature = "os-irq")]
     {
@@ -584,41 +599,43 @@ impl MutexLock {
 ///
 /// **Returns**
 /// - 0 on success, a negative errno otherwise.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nrf_modem_os_mutex_init(
     mutex: *mut *mut core::ffi::c_void,
 ) -> core::ffi::c_int {
-    if mutex.is_null() {
-        #[cfg(feature = "defmt")]
-        defmt::error!("Failed to init mutex (null argument)");
-        return -(nrfxlib_sys::NRF_EINVAL as i32);
-    }
-
-    // Allocate if needed
-    if (*mutex).is_null() {
-        // Allocate memory for the MutexLock
-        let p = nrf_modem_os_alloc(core::mem::size_of::<MaybeUninit<MutexLock>>())
-            as *mut MaybeUninit<MutexLock>;
-
-        if p.is_null() {
+    unsafe {
+        if mutex.is_null() {
             #[cfg(feature = "defmt")]
-            defmt::error!("Failed to init mutex: out of memory");
-            return -(nrfxlib_sys::NRF_ENOMEM as i32);
+            defmt::error!("Failed to init mutex (null argument)");
+            return -(nrfxlib_sys::NRF_EINVAL as i32);
         }
 
-        // Initialize the MutexLock
-        p.write(MaybeUninit::new(MutexLock {
-            lock: AtomicBool::new(false),
-        }));
+        // Allocate if needed
+        if (*mutex).is_null() {
+            // Allocate memory for the MutexLock
+            let p = nrf_modem_os_alloc(core::mem::size_of::<MaybeUninit<MutexLock>>())
+                as *mut MaybeUninit<MutexLock>;
 
-        // Assign the mutex
-        *mutex = p as *mut core::ffi::c_void;
-    } else {
-        // Already allocated, so just reinitialize (unlock) the mutex
-        (*(mutex as *mut MutexLock)).unlock();
+            if p.is_null() {
+                #[cfg(feature = "defmt")]
+                defmt::error!("Failed to init mutex: out of memory");
+                return -(nrfxlib_sys::NRF_ENOMEM as i32);
+            }
+
+            // Initialize the MutexLock
+            p.write(MaybeUninit::new(MutexLock {
+                lock: AtomicBool::new(false),
+            }));
+
+            // Assign the mutex
+            *mutex = p as *mut core::ffi::c_void;
+        } else {
+            // Already allocated, so just reinitialize (unlock) the mutex
+            (*(mutex as *mut MutexLock)).unlock();
+        }
+
+        0
     }
-
-    0
 }
 
 /// Lock a mutex.
@@ -630,44 +647,46 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_init(
 /// **Return values**
 /// - 0 – on success.
 /// - -NRF_EAGAIN – If the mutex could not be taken.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nrf_modem_os_mutex_lock(
     mutex: *mut core::ffi::c_void,
     timeout: core::ffi::c_int,
 ) -> core::ffi::c_int {
-    if mutex.is_null() {
-        return -(nrfxlib_sys::NRF_EINVAL as i32);
-    }
-
-    let mutex = &*(mutex as *mut MutexLock);
-
-    let mut locked = mutex.lock();
-
-    if locked || timeout == nrfxlib_sys::NRF_MODEM_OS_NO_WAIT as i32 {
-        return if locked {
-            0
-        } else {
-            -(nrfxlib_sys::NRF_EAGAIN as i32)
-        };
-    }
-
-    let mut elapsed = 0;
-    const WAIT_US: core::ffi::c_int = 100;
-
-    while !locked {
-        nrf_modem_os_busywait(WAIT_US);
-
-        if timeout != nrfxlib_sys::NRF_MODEM_OS_FOREVER {
-            elapsed += WAIT_US;
-            if (elapsed / 1000) > timeout {
-                return -(nrfxlib_sys::NRF_EAGAIN as i32);
-            }
+    unsafe {
+        if mutex.is_null() {
+            return -(nrfxlib_sys::NRF_EINVAL as i32);
         }
 
-        locked = mutex.lock();
-    }
+        let mutex = &*(mutex as *mut MutexLock);
 
-    0
+        let mut locked = mutex.lock();
+
+        if locked || timeout == nrfxlib_sys::NRF_MODEM_OS_NO_WAIT as i32 {
+            return if locked {
+                0
+            } else {
+                -(nrfxlib_sys::NRF_EAGAIN as i32)
+            };
+        }
+
+        let mut elapsed = 0;
+        const WAIT_US: core::ffi::c_int = 100;
+
+        while !locked {
+            nrf_modem_os_busywait(WAIT_US);
+
+            if timeout != nrfxlib_sys::NRF_MODEM_OS_FOREVER {
+                elapsed += WAIT_US;
+                if (elapsed / 1000) > timeout {
+                    return -(nrfxlib_sys::NRF_EAGAIN as i32);
+                }
+            }
+
+            locked = mutex.lock();
+        }
+
+        0
+    }
 }
 
 /// Unlock a mutex.
@@ -679,15 +698,17 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_lock(
 /// - 0 – on success.
 /// - -NRF_EPERM – If the current thread does not own this mutex.
 /// - -NRF_EINVAL – If the mutex is not locked.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nrf_modem_os_mutex_unlock(
     mutex: *mut core::ffi::c_void,
 ) -> core::ffi::c_int {
-    if mutex.is_null() {
-        return -(nrfxlib_sys::NRF_EINVAL as i32);
+    unsafe {
+        if mutex.is_null() {
+            return -(nrfxlib_sys::NRF_EINVAL as i32);
+        }
+        (*(mutex as *mut MutexLock)).unlock();
+        0
     }
-    (*(mutex as *mut MutexLock)).unlock();
-    0
 }
 
 /// Generic logging procedure
@@ -696,13 +717,13 @@ pub unsafe extern "C" fn nrf_modem_os_mutex_unlock(
 /// - level – Log level
 /// - msg - Message
 /// - ... – Varargs
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nrf_modem_os_log_wrapped(
     _level: core::ffi::c_int,
     _msg: *const core::ffi::c_char,
 ) {
     #[cfg(all(feature = "defmt", feature = "modem-log"))]
-    {
+    unsafe {
         let msg = core::ffi::CStr::from_ptr(_msg);
         if let Ok(msg) = msg.to_str() {
             defmt::trace!("Modem log <{}>: {}", _level, msg);
@@ -717,7 +738,7 @@ pub unsafe extern "C" fn nrf_modem_os_log_wrapped(
 /// - strdata - String to print in the log.
 /// - data - Data whose hex representation we want to log.
 /// - len - Length of the data to hex dump.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nrf_modem_os_logdump(
     _level: core::ffi::c_int,
     _strdata: *const core::ffi::c_char,

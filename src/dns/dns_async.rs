@@ -1,4 +1,4 @@
-use crate::{dns::dns_cache::DnsCache, CancellationToken, Error, LteLink, UdpSocket};
+use crate::{CancellationToken, Error, LteLink, UdpSocket, dns::dns_cache::DnsCache};
 use core::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
 use core::{cell::RefCell, convert::TryInto};
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
@@ -162,8 +162,8 @@ pub async fn resolve_dns_with_cancellation(
     // Try to get the records from the cache
     let result = {
         let cache = DNS_CACHE.lock().await;
-        let result = cache.borrow().get(query);
-        result
+
+        cache.borrow().get(query)
     };
     if let Some(cached_record) = result {
         #[cfg(feature = "defmt")]
@@ -367,7 +367,7 @@ async fn process_dns_response(response: &[u8], transaction_id: u16) -> Result<Ip
     // Skip Question Section
     for _ in 0..qdcount {
         parse_name(response, &mut pos)?; // Parse and ignore the question name
-                                         // Skip QTYPE and QCLASS
+        // Skip QTYPE and QCLASS
         pos = pos.checked_add(4).ok_or(Error::DnsParseFailed)?;
         if pos > response_len {
             return Err(Error::DnsParseFailed);

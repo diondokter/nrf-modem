@@ -7,12 +7,12 @@
 //! list of handle slots, or more actions inside the interrupt) might be added later, or
 //! independently (using [`nrfxlib_sys`] and working off [`crate::init_dect_with_custom_layout`]).
 
-use nrf_modem::nrfxlib_sys;
-use nrf_modem::{Error, ErrorSource, MemoryLayout, init_with_custom_layout_core};
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex,
     mutex::{Mutex, MutexGuard},
 };
+use nrf_modem::nrfxlib_sys;
+use nrf_modem::{Error, ErrorSource, MemoryLayout, init_with_custom_layout_core};
 
 const _: () = const {
     assert!(
@@ -111,7 +111,9 @@ impl<'a> RecvResult<'a> {
         let pcc_and_rest = self.indices.map_err(PdcError::PccError)?;
         let start = pcc_and_rest.pcc_len;
         let len = pcc_and_rest.pdc_len?;
-        self.data.get(start..start + len).ok_or(PdcError::OutOfSpace)
+        self.data
+            .get(start..start + len)
+            .ok_or(PdcError::OutOfSpace)
     }
 }
 
@@ -289,7 +291,8 @@ extern "C" fn dect_event(arg: *const nrfxlib_sys::nrf_modem_dect_phy_event) {
             // SAFETY: As per struct details.
             // (Easier to pass this on as bytes and do our own field access later)
             let header = &unsafe { pcc.hdr.type_2 }[..header_len];
-            defmt::trace!("PCC start {} handle {} phy_type {} rssi2 {} snr {} transaction {} hdr st {} hdr {:02x}",
+            defmt::trace!(
+                "PCC start {} handle {} phy_type {} rssi2 {} snr {} transaction {} hdr st {} hdr {:02x}",
                 pcc.stf_start_time,
                 pcc.handle,
                 pcc.phy_type,
@@ -298,7 +301,7 @@ extern "C" fn dect_event(arg: *const nrfxlib_sys::nrf_modem_dect_phy_event) {
                 pcc.transaction_id,
                 pcc.header_status,
                 header
-                );
+            );
 
             let mut recvbuf = RECVBUF
                 .try_lock()
@@ -355,12 +358,8 @@ pub struct DectPhy(());
 
 impl DectPhy {
     /// Starts the NRF Modem library with a manually specified memory layout
-    pub async fn init_with_custom_layout(
-        memory_layout: MemoryLayout,
-    ) -> Result<Self, Error> {
-        init_with_custom_layout_core(
-            memory_layout,
-        )?;
+    pub async fn init_with_custom_layout(memory_layout: MemoryLayout) -> Result<Self, Error> {
+        init_with_custom_layout_core(memory_layout)?;
 
         defmt::trace!("Setting DECT handler");
 
@@ -565,8 +564,16 @@ impl DectPhy {
         let result = match (pcc, pdc) {
             (None, None) => return Ok(None),
             (Some(Err(e)), None) => Err(e),
-            (Some(Ok((pcc_time, pcc_len))), None) => Ok(RecvOk { pcc_time, pcc_len, pdc_len: Err(PdcError::NotReceived) }),
-            (Some(Ok((pcc_time, pcc_len))), Some(pdc_len)) => Ok(RecvOk { pcc_time, pcc_len, pdc_len }),
+            (Some(Ok((pcc_time, pcc_len))), None) => Ok(RecvOk {
+                pcc_time,
+                pcc_len,
+                pdc_len: Err(PdcError::NotReceived),
+            }),
+            (Some(Ok((pcc_time, pcc_len))), Some(pdc_len)) => Ok(RecvOk {
+                pcc_time,
+                pcc_len,
+                pdc_len,
+            }),
             _ => panic!("Sequence violation"),
         };
 

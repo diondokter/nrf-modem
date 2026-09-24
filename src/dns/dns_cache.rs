@@ -11,11 +11,7 @@ const CACHE_BUFFER_SIZE: usize = 1024;
 
 // Get max data length
 const fn max(a: u8, b: u8) -> u8 {
-    if a > b {
-        a
-    } else {
-        b
-    }
+    if a > b { a } else { b }
 }
 const DATA_BUFFER_SIZE: usize = max(IPV4_ADDR_LENGTH, IPV6_ADDR_LENGTH) as usize;
 

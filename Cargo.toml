@@ -1,11 +1,10 @@
 [package]
 name = "nrf-modem"
 version = "0.10.2"
-edition = "2021"
-rust-version = "1.85"
+edition = "2024"
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 description = "Async modem api for the nRF91xx"
-homepage = "https://github.com/diondokter/nrf-modem"
 repository = "https://github.com/diondokter/nrf-modem"
 readme = "README.md"
 keywords = ["nRF91", "LTE", "GPS", "NB-IoT", "embedded"]
@@ -17,7 +16,7 @@ nrfxlib-sys = "3.0.3"
 
 futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
 num_enum = { version = "0.7.3", default-features = false }
-defmt = { version = "1.0.1", optional = true }
+defmt = { version = "1.1.1", optional = true, features = ["ip_in_core"] }
 cortex-m = "0.7.7"
 linked_list_allocator = { version="0.10.5", default-features=false, features=["use_spin"] }
 arrayvec = { version = "0.7.6", default-features = false }

@@ -30,61 +30,65 @@ impl<T: ?Sized> WakerNodeList<T> {
     }
 
     pub unsafe fn append_node(&mut self, node: *mut WakerNode<T>) {
-        if node.is_null() {
-            panic!("Node cannot be null");
-        }
-
-        let mut other = match self.next_node {
-            Some(other) if !core::ptr::eq(other, node) => other,
-            Some(_) => {
-                // Already in the list
-                return;
+        unsafe {
+            if node.is_null() {
+                panic!("Node cannot be null");
             }
-            None => {
-                self.next_node = Some(node);
-                return;
-            }
-        };
 
-        // Find the last one in the chain of the others
-        loop {
-            match (*other).next_node {
-                Some(next_node) if !core::ptr::eq(next_node, node) => other = next_node,
+            let mut other = match self.next_node {
+                Some(other) if !core::ptr::eq(other, node) => other,
                 Some(_) => {
                     // Already in the list
                     return;
                 }
-                None => break,
-            }
-        }
+                None => {
+                    self.next_node = Some(node);
+                    return;
+                }
+            };
 
-        (*other).next_node = Some(node);
-        (*node).previous_node = Some(other);
-        (*node).next_node = None;
+            // Find the last one in the chain of the others
+            loop {
+                match (*other).next_node {
+                    Some(next_node) if !core::ptr::eq(next_node, node) => other = next_node,
+                    Some(_) => {
+                        // Already in the list
+                        return;
+                    }
+                    None => break,
+                }
+            }
+
+            (*other).next_node = Some(node);
+            (*node).previous_node = Some(other);
+            (*node).next_node = None;
+        }
     }
 
     pub unsafe fn remove_node(&mut self, node: *mut WakerNode<T>) {
-        if node.is_null() {
-            panic!("Node cannot be null");
+        unsafe {
+            if node.is_null() {
+                panic!("Node cannot be null");
+            }
+
+            let next_node = (*node).next_node;
+            let previous_node = (*node).previous_node;
+
+            if let Some(next_node) = next_node {
+                (*next_node).previous_node = previous_node
+            }
+
+            if let Some(previous_node) = previous_node {
+                (*previous_node).next_node = next_node
+            }
+
+            if self.next_node == Some(node) {
+                self.next_node = next_node;
+            }
+
+            (*node).next_node = None;
+            (*node).previous_node = None;
         }
-
-        let next_node = (*node).next_node;
-        let previous_node = (*node).previous_node;
-
-        if let Some(next_node) = next_node {
-            (*next_node).previous_node = previous_node
-        }
-
-        if let Some(previous_node) = previous_node {
-            (*previous_node).next_node = next_node
-        }
-
-        if self.next_node == Some(node) {
-            self.next_node = next_node;
-        }
-
-        (*node).next_node = None;
-        (*node).previous_node = None;
     }
 
     /// Wakes all nodes

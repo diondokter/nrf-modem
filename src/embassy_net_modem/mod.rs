@@ -5,7 +5,7 @@
 use core::cell::RefCell;
 use core::mem::MaybeUninit;
 
-use embassy_futures::select::{select3, Either3};
+use embassy_futures::select::{Either3, select3};
 use embassy_net_driver_channel::{self as ch, driver::LinkState};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::Timer;

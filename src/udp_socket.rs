@@ -1,7 +1,7 @@
 use crate::{
+    CancellationToken, LteLink,
     error::Error,
     socket::{Socket, SocketFamily, SocketProtocol, SocketType, SplitSocketHandle},
-    CancellationToken, LteLink,
 };
 use core::net::SocketAddr;
 
