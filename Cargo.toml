@@ -1,6 +1,6 @@
 [package]
 name = "nrf-modem"
-version = "0.10.2"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"
@@ -12,7 +12,7 @@ keywords = ["nRF91", "LTE", "GPS", "NB-IoT", "embedded"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nrfxlib-sys = "3.0.3"
+nrfxlib-sys = "4.0.0"
 
 futures = { version = "0.3.24", default-features = false, features = ["async-await"] }
 num_enum = { version = "0.7.3", default-features = false }
@@ -24,15 +24,15 @@ nrf9160-pac = { version = "0.12.2", optional = true }
 nrf9120-pac = { version = "0.12.2", optional = true }
 at-commands = "0.5.5"
 critical-section = "1.2.0"
-embassy-sync = "0.7.2"
+embassy-sync = "0.8.0"
 embassy-time = { version = "0.5.0", optional = true }
 grounded = "0.2.0"
 embedded-io-async = "0.7.0"
 
 # embassy-net driver
 embassy-futures = { version = "0.1.1", optional = true }
-embassy-net-driver-channel = { version = "0.3.0", optional = true }
-heapless = { version = "0.8.0", optional = true }
+embassy-net-driver-channel = { version = "0.4.0", optional = true }
+heapless = { version = "0.9.3", optional = true }
 
 embedded-nal-async = { version = "0.9.0", optional = true }
 
@@ -51,7 +51,7 @@ modem-log = ["nrfxlib-sys/log", "dep:cc"]
 ## This subtly alters the behavior, while reusing the same core functionality:
 ## #For example, the size of the CTRL memory region is adjusted, and a shutdown
 ## feature of the FFI is bypassed.
-dect = ["nrfxlib-sys/dect"]
+dect = ["nrfxlib-sys/dect-phy"]
 
 nrf9160 = ["nrfxlib-sys/nrf9160", "dep:nrf9160-pac"]
 nrf9151 = ["nrf9120"]

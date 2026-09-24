@@ -382,6 +382,7 @@ enum GnssDataType {
 
 /// An enum containing all possible GNSS data types
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant, reason = "Not much we can do about it")]
 pub enum GnssData {
     /// A PVT value
     PositionVelocityTime(nrfxlib_sys::nrf_modem_gnss_pvt_data_frame),
